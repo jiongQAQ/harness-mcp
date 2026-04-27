@@ -1,0 +1,29 @@
+{
+  "name": "harness-mcp",
+  "version": "0.0.1",
+  "description": "Language-agnostic AI collaboration contract layer (MCP server). Read specs, update specs, verify business semantics.",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "harness-mcp": "./bin/harness-mcp"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@cucumber/gherkin": "^39.0.0",
+    "@cucumber/messages": "^32.3.1",
+    "fastmcp": "^4.0.1",
+    "yaml": "^2.8.3",
+    "zod": "^4.3.6"
+  }
+}
