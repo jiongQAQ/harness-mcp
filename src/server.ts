@@ -1,14 +1,21 @@
 import { FastMCP } from "fastmcp";
 import { z } from "zod";
+import { CreateSpecInputSchema, executeCreateSpec } from "./tools/create_spec.ts";
 import {
   ContextInputSchema,
   executeContext,
 } from "./tools/context.ts";
+import { CheckInputSchema, executeCheck } from "./tools/check.ts";
 import {
   ListCapabilitiesInputSchema,
   executeListCapabilities,
 } from "./tools/list_capabilities.ts";
+import { DoctorInputSchema, executeDoctor } from "./tools/doctor.ts";
+import { FlowInputSchema, executeFlow } from "./tools/flow.ts";
+import { InfoInputSchema, executeInfo } from "./tools/info.ts";
+import { LsInputSchema, executeLs } from "./tools/ls.ts";
 import { ReadSpecInputSchema, executeReadSpec } from "./tools/read_spec.ts";
+import { RunInputSchema, executeRun } from "./tools/run.ts";
 import { SearchInputSchema, executeSearch } from "./tools/search.ts";
 import { UpdateSpecInputSchema, executeUpdateSpec } from "./tools/update_spec.ts";
 import { VerifyInputSchema, executeVerify } from "./tools/verify.ts";
@@ -63,6 +70,14 @@ export function createServer() {
   });
 
   server.addTool({
+    name: "create_spec",
+    description:
+      "安全创建新的业务能力 .feature 文件。AI 提供完整 content;本工具只负责去重、路径安全、# capability 匹配和 Gherkin 校验。",
+    parameters: CreateSpecInputSchema,
+    execute: async (input) => executeCreateSpec(input),
+  });
+
+  server.addTool({
     name: "list_capabilities",
     description:
       "列出所有能力(capability),支持按 @tag 或 name 前缀过滤。" +
@@ -72,12 +87,67 @@ export function createServer() {
   });
 
   server.addTool({
+    name: "ls",
+    description:
+      "扫描目录,发现已接入 harness.yaml 的项目。返回项目路径、能力数量、charter 数量和 verify 是否配置。" +
+      "只读,不执行测试。",
+    parameters: LsInputSchema,
+    execute: async (input) => executeLs(input),
+  });
+
+  server.addTool({
+    name: "info",
+    description:
+      "查看当前项目的 harness 接入状态:配置路径、规格目录、charter/capability 统计、tag、关联文件、verify 配置。" +
+      "只读,不执行测试。",
+    parameters: InfoInputSchema,
+    execute: async (input) => executeInfo(input),
+  });
+
+  server.addTool({
+    name: "doctor",
+    description:
+      "静态自检当前项目的 harness 接入:检查 harness.yaml、目录、capability 元数据、重复能力名、verify 报告解析支持。" +
+      "只读,不执行测试。",
+    parameters: DoctorInputSchema,
+    execute: async (input) => executeDoctor(input),
+  });
+
+  server.addTool({
     name: "read_spec",
     description:
       "读单个能力的 .feature 全文。capability 支持模糊匹配(case-insensitive substring)," +
       "命中多个会列候选。改业务代码前先调这个工具。",
     parameters: ReadSpecInputSchema,
     execute: async (input) => executeReadSpec(input),
+  });
+
+  server.addTool({
+    name: "run",
+    description:
+      "执行 harness.yaml 的 commands.run 普通业务验证命令,解析报告并返回通过/失败摘要。" +
+      "若未配置 commands.run,会兼容回退到 verify。",
+    parameters: RunInputSchema,
+    execute: async (input) => executeRun(input),
+  });
+
+  server.addTool({
+    name: "flow",
+    description:
+      "列出或执行端到端用户旅程。默认扫描 harness/flows/**/*.feature;传 name 时执行 commands.flow。" +
+      "支持 dryRun 只展示命令。",
+    parameters: FlowInputSchema,
+    execute: async (input) => executeFlow(input),
+  });
+
+  server.addTool({
+    name: "check",
+    description:
+      "执行项目约束检查。默认扫描 harness/constraints/**/*.feature;dryRun 只列出约束。" +
+      "未配置 commands.check 时使用内置通用 lint steps,支持扫描 git diff 新增行;" +
+      "已配置时运行宿主项目 commands.check。",
+    parameters: CheckInputSchema,
+    execute: async (input) => executeCheck(input),
   });
 
   server.addTool({

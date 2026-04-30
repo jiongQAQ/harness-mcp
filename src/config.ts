@@ -12,12 +12,19 @@ const ReportSchema = z.object({
   path: z.string(),
 });
 
-const VerifySchema = z.object({
+const CommandSchema = z.object({
   cmd: z.string(),
   workdir: z.string().optional().default("."),
-  filter_pattern: z.string().optional(),
   report: ReportSchema.optional(),
   timeout_ms: z.number().optional().default(300_000),
+});
+
+const VerifySchema = CommandSchema.extend({
+  filter_pattern: z.string().optional(),
+});
+
+const FilterableCommandSchema = CommandSchema.extend({
+  filter_pattern: z.string().optional(),
 });
 
 export const ConfigSchema = z.object({
@@ -25,6 +32,13 @@ export const ConfigSchema = z.object({
   spec_dir: z.string().default("harness"),
   charter_dir: z.string().optional(),
   verify: VerifySchema.optional(),
+  commands: z
+    .object({
+      run: CommandSchema.optional(),
+      flow: FilterableCommandSchema.optional(),
+      check: CommandSchema.optional(),
+    })
+    .optional(),
   ai_hints: z.string().optional(),
 });
 

@@ -43,13 +43,20 @@
 
 ## 三、要做什么
 
-### MVP 6 个工具(已完成)
+### MVP 核心工具(已完成)
 
 | 工具 | 作用 |
 |---|---|
+| `check` | 跑项目约束检查 |
 | `context` | 宪法全文 + 能力索引(AI 入口,改代码前必调) |
+| `create_spec` | 安全创建新的业务规格文件 |
+| `info` | 查看项目 harness 接入状态,不执行测试 |
+| `doctor` | 静态自检 harness 接入问题,不执行测试 |
+| `flow` | 列出或执行端到端用户旅程 |
 | `list_capabilities` | 列能力,支持 `@tag` / 名字前缀过滤 |
+| `ls` | 扫描工作区里哪些项目接入了 harness |
 | `read_spec` | 读单个能力的 .feature 全文(模糊匹配,0/1/many 三种 UX) |
+| `run` | 跑普通业务验证命令,解析报告 |
 | `search` | 全文搜所有 .feature,带上下文 |
 | `update_spec` | 整文件 rewrite,默认做 Gherkin 语法校验 |
 | `verify` | spawn 外部测试命令 + 解析 cucumber-json + 带 git diff |
@@ -63,9 +70,12 @@
 - ❌ 持久化历史 — git log 已经做了
 - ❌ Web UI / 鉴权 / 多租户
 
-### v0.2 候选(看反馈再加)
+### v0.2 候选(只做实用闭环)
 
-`create_capability` / `delete_capability` / `diff_spec` / `validate` / surefire-xml + pytest-json 解析器
+- `report`: 看历史运行结果。
+- 常用报告解析器: Java/Python 常见 JUnit XML。
+
+明确不做 `create_capability/delete_capability` 这类模板脚手架工具。AI 负责写完整 `.feature` 内容；`create_spec` 只做路径安全、去重、`# capability` 匹配和 Gherkin 校验后落盘。
 
 ---
 

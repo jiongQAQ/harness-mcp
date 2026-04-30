@@ -71,10 +71,43 @@ for (const r of responses) {
 }
 
 const pingResp = responses.find((r) => r.id === 3);
-if (pingResp?.result?.content?.[0]?.text === "pong") {
-  console.log("\n✅ PASS: ping returned pong");
-  process.exit(0);
-} else {
+const toolsResp = responses.find((r) => r.id === 2);
+const toolNames =
+  toolsResp?.result?.tools?.map((tool: { name: string }) => tool.name) ?? [];
+
+const expectedTools = [
+  "check",
+  "context",
+  "create_spec",
+  "doctor",
+  "flow",
+  "info",
+  "list_capabilities",
+  "ls",
+  "ping",
+  "read_spec",
+  "run",
+  "search",
+  "update_spec",
+  "verify",
+];
+
+if (pingResp?.result?.content?.[0]?.text !== "pong") {
   console.log("\n❌ FAIL: ping did not return pong");
   process.exit(1);
 }
+
+for (const name of expectedTools) {
+  if (!toolNames.includes(name)) {
+    console.log(`\n❌ FAIL: missing tool ${name}`);
+    process.exit(1);
+  }
+}
+
+if (toolNames.includes("create_capability")) {
+  console.log("\n❌ FAIL: create_capability should not be registered");
+  process.exit(1);
+}
+
+console.log("\n✅ PASS: ping returned pong and practical tool set is registered");
+process.exit(0);

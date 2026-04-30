@@ -21,7 +21,7 @@
 - 多语言通用,配置文件 `harness.yaml`(不绑 package.json)
 - "文档先行"用**软强制**(prompt+工具描述指引,不硬拒绝)
 - 规格和示例**先合并**到一个 `.feature` 文件,后续看效果再拆
-- MVP **6 个工具**(F1/F2/F3/F4/F5/F8)
+- MVP 只保留少量实用工具:读上下文、查能力、改规格、跑验证、看接入状态、自检配置
 - 项目宪法用**多文件 `_charter/`** 目录组织
 - verify 失败时**自动带上 git diff** 给 AI
 
@@ -29,20 +29,30 @@
 
 ## 功能集
 
-### MVP(6 个工具)
+### MVP 核心工具
 
 | ID | 工具 | 解决 |
 |---|---|---|
+| F14 | `check(dryRun?)` | 跑项目约束检查 |
+| F15 | `create_spec(capability, file, content)` | 安全创建新的业务规格文件 |
 | F1 | `read_spec(capability)` | P1 — 读单个能力的 .feature 全文 |
 | F2 | `list_capabilities()` | P1 — 列出所有能力 + 元数据 |
 | F3 | `context()` | P1 — 项目宪法全文 + 能力索引(AI 入口) |
 | F4 | `update_spec(capability, content)` | P2 — 修改 .feature(rewrite) |
 | F5 | `verify(capability?)` | P3 — 跑外部测试,返回结构化结果 + git diff |
 | F8 | `search(query)` | P1 — 跨所有 .feature 全文搜索 |
+| F9 | `ls(path?, depth?)` | 扫描工作区里哪些项目接入了 harness |
+| F10 | `run()` | 跑普通业务验证命令,解析报告 |
+| F13 | `flow(name?, dryRun?)` | 列出或执行端到端用户旅程 |
+| F11 | `info()` | 看当前项目是否接入、能力数量、tag、verify 配置 |
+| F12 | `doctor()` | 静态检查接入问题,不执行测试 |
 
-### v0.2(看反馈再加)
+### v0.2(按真实闭环加)
 
-F6 `create_capability` / F7 `delete_capability` / F9 `diff_spec` / F10 `validate`
+优先补原版 HarnessX 里真正有用的能力:
+
+- `report`: 看历史运行结果。
+- 常用报告解析器: Java/Python 常见 JUnit XML。
 
 ### 永远不做
 
@@ -50,6 +60,7 @@ F6 `create_capability` / F7 `delete_capability` / F9 `diff_spec` / F10 `validate
 - ❌ Step definition 管理 — cucumber-jvm/pytest-bdd 的事
 - ❌ 持久化历史 — git log 已经做了
 - ❌ Web UI / 鉴权 / 多租户 / 多项目联邦 — YAGNI
+- ❌ 模板脚手架工具 — AI 负责写完整 `.feature` 内容,MCP 只做安全创建和校验
 
 ---
 
