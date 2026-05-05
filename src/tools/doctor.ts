@@ -7,8 +7,17 @@ import { relative, resolve } from "node:path";
 import { Glob } from "bun";
 import { z } from "zod";
 import { loadConfig } from "../config.ts";
-import { discoverCapabilities } from "../capability.ts";
+import { discoverCapabilities, isReservedSpecFeatureRel } from "../capability.ts";
+import { analyzeBuiltinConstraintSteps } from "../constraint_runner.ts";
+import {
+  checkFeatureQuality,
+  hasZhCnLanguageHeader,
+} from "../feature_quality.ts";
 import { resolveProjectRoot } from "../project.ts";
+import {
+  discoverConstraints,
+  getConstraintDiscoveryWarnings,
+} from "./check.ts";
 
 export const DoctorInputSchema = z.object({
   path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
@@ -29,7 +38,13 @@ interface DoctorCheck {
 interface FeatureMeta {
   fileRel: string;
   name: string;
+  content: string;
   hasExplicitCapability: boolean;
+}
+
+interface HarnessFeatureMeta {
+  fileRel: string;
+  content: string;
 }
 
 const SUPPORTED_REPORT_FORMATS = new Set(["cucumber-json"]);
@@ -54,6 +69,16 @@ export async function executeDoctor(input: DoctorInput): Promise<string> {
     id: "config.valid",
     level: "pass",
     message: "harness.yaml is valid",
+  });
+
+  checks.push({
+    id: "config.spec_dir_convention",
+    level: loaded.config.spec_dir === "harness" ? "pass" : "warn",
+    message:
+      loaded.config.spec_dir === "harness"
+        ? "spec_dir follows harness convention"
+        : `推荐 harness.yaml 使用 spec_dir: harness,不要让 AI 自己发明 ${loaded.config.spec_dir} 这类目录`,
+    detail: loaded.config.spec_dir,
   });
 
   checks.push({
@@ -116,6 +141,107 @@ export async function executeDoctor(input: DoctorInput): Promise<string> {
         ? "capability names are unique"
         : "duplicate capability names found",
     detail: duplicates.length === 0 ? undefined : duplicates.join(", "),
+  });
+
+  const qualityIssues = featureMeta.flatMap((feature) =>
+    checkFeatureQuality(feature.content, feature.fileRel).issues.map((issue) => ({
+      ...issue,
+      fileRel: feature.fileRel,
+    })),
+  );
+  for (const id of [
+    "feature_quality.language",
+    "feature_quality.required_sections",
+    "feature_quality.business_source",
+    "feature_quality.scenarios",
+    "feature_quality.path_style",
+  ]) {
+    const issues = qualityIssues.filter((issue) => issue.id === id);
+    if (issues.length === 0) {
+      checks.push({
+        id,
+        level: "pass",
+        message: featureQualityPassMessage(id),
+      });
+      continue;
+    }
+    const level = issues.some((issue) => issue.level === "fail") ? "fail" : "warn";
+    checks.push({
+      id,
+      level,
+      message: featureQualityIssueMessage(id, issues.length),
+      detail: issues.map((issue) => `${issue.fileRel}: ${issue.message}`).join("; "),
+    });
+  }
+
+  const nonBusinessFeatures = await collectNonBusinessFeatureMeta(
+    loaded.projectRoot,
+    loaded.specDirAbs,
+    loaded.charterDirAbs,
+  );
+  const missingNonBusinessLanguage = nonBusinessFeatures.filter(
+    (feature) => !hasZhCnLanguageHeader(feature.content),
+  );
+  checks.push({
+    id: "harness_language.non_business_zh_cn",
+    level: missingNonBusinessLanguage.length === 0 ? "pass" : "warn",
+    message:
+      missingNonBusinessLanguage.length === 0
+        ? "charter/constraints/flows use # language: zh-CN"
+        : `${missingNonBusinessLanguage.length} non-business harness files are missing # language: zh-CN`,
+    detail:
+      missingNonBusinessLanguage.length === 0
+        ? undefined
+        : missingNonBusinessLanguage.map((feature) => feature.fileRel).join(", "),
+  });
+
+  const constraints = await discoverConstraints(
+    loaded.projectRoot,
+    loaded.specDirAbs,
+  );
+  const constraintDiscoveryWarnings = getConstraintDiscoveryWarnings(
+    loaded.projectRoot,
+    loaded.config.spec_dir,
+    loaded.specDirAbs,
+  );
+  checks.push({
+    id: "constraints.discoverable",
+    level:
+      constraintDiscoveryWarnings.length > 0
+        ? "fail"
+        : constraints.length > 0
+          ? "pass"
+          : "warn",
+    message:
+      constraintDiscoveryWarnings.length > 0
+        ? "constraints are outside the directory check scans"
+        : constraints.length > 0
+          ? `${constraints.length} constraints found`
+          : "no constraints found",
+    detail:
+      constraintDiscoveryWarnings.length === 0
+        ? undefined
+        : constraintDiscoveryWarnings.join("; "),
+  });
+
+  const unsupportedConstraintSteps = loaded.config.commands?.check
+    ? []
+    : analyzeBuiltinConstraintSteps(constraints);
+  checks.push({
+    id: "constraints.builtin_steps",
+    level: unsupportedConstraintSteps.length === 0 ? "pass" : "fail",
+    message:
+      unsupportedConstraintSteps.length === 0
+        ? loaded.config.commands?.check
+          ? "commands.check is configured; built-in step DSL is optional"
+          : "all built-in constraint steps are supported"
+        : `${unsupportedConstraintSteps.length} unsupported built-in constraint steps found`,
+    detail:
+      unsupportedConstraintSteps.length === 0
+        ? undefined
+        : unsupportedConstraintSteps
+            .map((issue) => `${issue.featureFile}: ${issue.step}`)
+            .join("; "),
   });
 
   const verifyCfg = loaded.config.verify;
@@ -213,7 +339,7 @@ async function collectFeatureMeta(
   for await (const rel of glob.scan({ cwd: specDirAbs, onlyFiles: true })) {
     const abs = resolve(specDirAbs, rel);
     if (abs.startsWith(charterDirAbs + "/")) continue;
-    if (rel.split("/").some((seg) => seg.startsWith("_"))) continue;
+    if (isReservedSpecFeatureRel(rel)) continue;
 
     const content = await readFile(abs, "utf-8");
     const capMatch = content.match(CAP_RE);
@@ -221,11 +347,78 @@ async function collectFeatureMeta(
     result.push({
       fileRel,
       name: capMatch?.[1]?.trim() ?? fileRel.replace(/\.feature$/, ""),
+      content,
       hasExplicitCapability: Boolean(capMatch?.[1]?.trim()),
     });
   }
 
   return result;
+}
+
+async function collectNonBusinessFeatureMeta(
+  projectRoot: string,
+  specDirAbs: string,
+  charterDirAbs: string,
+): Promise<HarnessFeatureMeta[]> {
+  const result: HarnessFeatureMeta[] = [];
+  const seen = new Set<string>();
+  await collectFeatureFilesUnder(charterDirAbs, projectRoot, result, seen);
+  await collectFeatureFilesUnder(resolve(specDirAbs, "constraints"), projectRoot, result, seen);
+  await collectFeatureFilesUnder(resolve(specDirAbs, "flows"), projectRoot, result, seen);
+  return result;
+}
+
+async function collectFeatureFilesUnder(
+  dirAbs: string,
+  projectRoot: string,
+  result: HarnessFeatureMeta[],
+  seen: Set<string>,
+): Promise<void> {
+  if (!existsSync(dirAbs)) return;
+  const glob = new Glob("**/*.feature");
+  for await (const rel of glob.scan({ cwd: dirAbs, onlyFiles: true })) {
+    const abs = resolve(dirAbs, rel);
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    result.push({
+      fileRel: relative(projectRoot, abs),
+      content: await readFile(abs, "utf-8"),
+    });
+  }
+}
+
+function featureQualityPassMessage(id: string): string {
+  switch (id) {
+    case "feature_quality.language":
+      return "all capability features use # language: zh-CN";
+    case "feature_quality.required_sections":
+      return "all capability features have required business contract sections";
+    case "feature_quality.business_source":
+      return "all capability features declare business source type";
+    case "feature_quality.scenarios":
+      return "all capability features have at least one scenario";
+    case "feature_quality.path_style":
+      return "feature paths look business-oriented";
+    default:
+      return `${id} passed`;
+  }
+}
+
+function featureQualityIssueMessage(id: string, count: number): string {
+  switch (id) {
+    case "feature_quality.language":
+      return `${count} capability features are missing # language: zh-CN`;
+    case "feature_quality.required_sections":
+      return `${count} feature quality section issues found`;
+    case "feature_quality.business_source":
+      return `${count} feature business source issues found`;
+    case "feature_quality.scenarios":
+      return `${count} feature scenario issues found`;
+    case "feature_quality.path_style":
+      return `${count} feature paths look code-module oriented`;
+    default:
+      return `${count} ${id} issues found`;
+  }
 }
 
 function findDuplicates(values: string[]): string[] {

@@ -102,10 +102,13 @@ export async function executeContext(input: ContextInput): Promise<string> {
   // 引导
   lines.push("");
   lines.push("── How to use ──");
-  lines.push("  • read_spec(<capability>) — 读单个能力全文");
-  lines.push("  • search(<query>)         — 全文搜索");
-  lines.push("  • update_spec(...)        — 改规格(改实现前先做这步)");
-  lines.push("  • verify(<capability?>)   — 跑测试 + git diff");
+  lines.push("  • 新增业务: 用户提供 PRD/需求 → create_spec → 写测试红 → 写代码 → verify 绿");
+  lines.push("  • 业务改动: read_spec → update_spec → 改测试红 → 改代码 → verify 绿");
+  lines.push("  • 纯重构: feature 不变 → verify/check 保证行为不变");
+  lines.push("  • 目录约定: harness.yaml 使用 spec_dir: harness,不要创建 harness/specs");
+  lines.push("  • harness .feature 默认中文,新建/修改时必须包含 # language: zh-CN");
+  lines.push("  • feature 必须包含: 业务来源 / 意图 / 边界 / 核心承诺 / 风险 / 待确认");
+  lines.push("  • check() 用于拦截本次 AI 新增低质量改动");
 
   return lines.join("\n");
 }

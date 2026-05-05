@@ -172,6 +172,10 @@ if (!a.includes("passed=1") || !a.includes("failed=0")) {
   console.error("❌ FAIL: A — should report 1 passed");
   pass = false;
 }
+if (a.includes("Git Diff")) {
+  console.error("❌ FAIL: A — verify should not include git diff by default");
+  pass = false;
+}
 
 const b = txt(r2, 41);
 console.log("=== B: verify with failure (capability=getByUid) ===\n" + b + "\n");
@@ -193,6 +197,9 @@ let raw: any;
 try { raw = JSON.parse(c); } catch {}
 if (!raw || raw.exit_code !== 0 || raw.report?.failures?.length !== 1) {
   console.error("❌ FAIL: C raw report malformed");
+  pass = false;
+} else if (raw.git_diff !== null) {
+  console.error("❌ FAIL: C raw should not include git diff by default");
   pass = false;
 } else {
   console.log("=== C: raw OK (failures=1, capability=" + raw.capability + ") ===\n");

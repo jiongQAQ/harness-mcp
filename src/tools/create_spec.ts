@@ -7,6 +7,10 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 import { discoverCapabilities } from "../capability.ts";
 import { loadConfig } from "../config.ts";
+import {
+  checkFeatureQuality,
+  formatFeatureQualityFailure,
+} from "../feature_quality.ts";
 import { validateGherkin } from "../gherkin.ts";
 import { resolveProjectRoot } from "../project.ts";
 
@@ -58,12 +62,24 @@ export async function executeCreateSpec(input: CreateSpecInput): Promise<string>
     return `# capability 不匹配: content 是 "${contentCapability}", 参数是 "${input.capability}"`;
   }
 
+  const quality = checkFeatureQuality(input.content, target.fileRel);
+  const languageFailure = quality.failures.some(
+    (issue) => issue.id === "feature_quality.language",
+  );
+  if (languageFailure) {
+    return formatFeatureQualityFailure(quality, target.fileRel);
+  }
+
   const validation = validateGherkin(input.content);
   if (!validation.ok) {
     return [
       `Gherkin 语法错误,拒绝创建 ${target.fileRel}:`,
       ...validation.errors.map((e) => `  line ${e.line}: ${e.message}`),
     ].join("\n");
+  }
+
+  if (!quality.ok) {
+    return formatFeatureQualityFailure(quality, target.fileRel);
   }
 
   await mkdir(dirname(target.abs), { recursive: true });

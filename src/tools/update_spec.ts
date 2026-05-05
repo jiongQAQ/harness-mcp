@@ -5,6 +5,10 @@ import { writeFile } from "node:fs/promises";
 import { z } from "zod";
 import { loadConfig } from "../config.ts";
 import { discoverCapabilities, matchCapabilities } from "../capability.ts";
+import {
+  checkFeatureQuality,
+  formatFeatureQualityFailure,
+} from "../feature_quality.ts";
 import { resolveProjectRoot } from "../project.ts";
 import { validateGherkin } from "../gherkin.ts";
 
@@ -46,6 +50,14 @@ export async function executeUpdateSpec(input: UpdateSpecInput): Promise<string>
 
   const cap = matched[0]!;
 
+  const quality = checkFeatureQuality(input.content, cap.fileRel);
+  const languageFailure = quality.failures.some(
+    (issue) => issue.id === "feature_quality.language",
+  );
+  if (languageFailure) {
+    return formatFeatureQualityFailure(quality, cap.fileRel);
+  }
+
   // Gherkin 校验
   const validation = validateGherkin(input.content);
   if (!validation.ok && !input.allow_invalid_gherkin) {
@@ -55,6 +67,10 @@ export async function executeUpdateSpec(input: UpdateSpecInput): Promise<string>
       "",
       "如确实要写入,加入 allow_invalid_gherkin=true 参数。",
     ].join("\n");
+  }
+
+  if (!quality.ok) {
+    return formatFeatureQualityFailure(quality, cap.fileRel);
   }
 
   await writeFile(cap.fileAbs, input.content, "utf-8");

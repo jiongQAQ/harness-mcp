@@ -26,6 +26,15 @@ export interface Capability {
 const CAP_RE = /^#\s*capability:\s*(.+)\s*$/m;
 const FILES_RE = /^#\s*files:\s*(.+)\s*$/m;
 const TITLE_RE = /^\s*(?:Feature|功能|功能性|Característica|機能):\s*(.+)$/m;
+const NON_CAPABILITY_TOP_LEVEL_DIRS = new Set(["constraints", "flows"]);
+
+export function isReservedSpecFeatureRel(rel: string): boolean {
+  const segments = rel.split(/[\\/]+/);
+  return (
+    segments.some((seg) => seg.startsWith("_")) ||
+    NON_CAPABILITY_TOP_LEVEL_DIRS.has(segments[0] ?? "")
+  );
+}
 
 /**
  * 扫描 specDirAbs 下所有 .feature 文件,排除 charterDirAbs 下的(它们是宪法,不是能力)。
@@ -46,8 +55,8 @@ export async function discoverCapabilities(
     const abs = resolve(specDirAbs, rel);
     // charter 目录跳过
     if (abs.startsWith(charterDirAbs + "/")) continue;
-    // _ 开头的 feature 也算章程/特殊文件,跳过(约定)
-    if (rel.split("/").some((seg) => seg.startsWith("_"))) continue;
+    // _、constraints、flows 是特殊规格文件,不是业务能力。
+    if (isReservedSpecFeatureRel(rel)) continue;
 
     const cap = await readCapability(abs, projectRoot);
     result.push(cap);

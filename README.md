@@ -1,26 +1,47 @@
 # harness-mcp
 
-> 语言无关的 AI 协作契约层 MCP — 给 AI 写代码套上"项目宪法 + 业务规格"两道护栏。
+`harness-mcp` 是一个给 AI 编程使用的 MCP Server。它把项目里的业务需求、项目约定、验证命令和代码质量约束暴露给 AI,让 AI 在改代码前先读懂业务,改完后能主动验证结果。
 
-## 解决什么问题
+它不是测试框架,也不替代项目已有的 `mvn test`、`pytest`、`go test`、Cucumber、Playwright。它更像一层“AI 协作协议”:告诉 AI 该读什么、该改什么、该跑什么、什么代码不能乱写。
 
-| 痛点 | 本工具的回应 |
+## 它解决什么
+
+| 问题 | harness-mcp 怎么解决 |
 |---|---|
-| AI 写代码无边界、不懂项目约定 | `context()` 一次性吐出宪法 + 能力索引 |
-| 规则写了但没人执行 | `check()` 可直接执行通用约束,也可接宿主项目检查命令 |
-| 文档↔ 代码不同步 | `update_spec` 引导"先改契约,再改实现" |
-| 改完不知道挂了哪些业务语义 | `verify(capability?)` 跑外部测试 + 解析报告 + 自带 git diff |
+| 第一次使用不知道从哪里开始 | `help` 静态解释 MCP 工具、推荐流程和中文 feature/check/flow 示例 |
+| AI 不知道项目有哪些业务 | `context` / `list_capabilities` 给 AI 能力地图 |
+| AI 改代码前不读业务规则 | `read_spec` 读取业务 feature 契约 |
+| 新业务没有先定义需求 | `create_spec` 创建新的业务 feature |
+| 业务变更没有先改文档 | `update_spec` 先改 feature,再改测试和代码 |
+| feature 写得太浅 | 业务契约质量门禁会拦截缺段落、缺来源、缺场景 |
+| AI 随便加兜底 try/catch、临时输出、硬编码 | `check` 执行约束,支持只检查本次 git diff 新增代码 |
+| 改完不知道破坏了什么 | `verify` / `run` 调项目自己的测试命令并解析报告 |
+| 一个目录下很多项目不知道谁接入了 | `ls` 扫描已接入 `harness.yaml` 的项目 |
 
-**和 HarnessX 的本质区别**:HarnessX 是绑死 TS/bun 的执行框架;本项目只做 AI 通信协议,执行甩给宿主项目自己的工具链(mvn/pytest/go test 都行)。
+核心流程:
 
-## 安装 / 启动
+```text
+新增业务: PRD/需求 -> create_spec -> 写测试红 -> 写代码 -> verify/check
+业务改动: read_spec -> update_spec -> 改测试红 -> 改代码 -> verify/check
+纯重构: feature 不变 -> 改代码 -> verify/check
+```
+
+## 安装
 
 ```bash
 bun install
-bun run src/index.ts          # stdio MCP server
+bun run start
 ```
 
-接到 Claude Code (`~/.claude.json` 或项目级 `.mcp.json`):
+开发时可以跑:
+
+```bash
+bun run typecheck
+```
+
+## 接入 MCP 客户端
+
+Claude Code 示例:
 
 ```json
 {
@@ -28,49 +49,43 @@ bun run src/index.ts          # stdio MCP server
     "harness": {
       "command": "bun",
       "args": ["run", "/abs/path/to/harness-mcp/src/index.ts"],
-      "env": { "HARNESS_PROJECT_ROOT": "/abs/path/to/your/project" }
+      "env": {
+        "HARNESS_PROJECT_ROOT": "/abs/path/to/your/project"
+      }
     }
   }
 }
 ```
 
-`HARNESS_PROJECT_ROOT` 不传时回落到 `process.cwd()`。
+`HARNESS_PROJECT_ROOT` 指向要让 AI 操作的真实项目根目录。不传时使用 MCP Server 当前工作目录。
 
-## 工具(13 + 1)
+## 在真实项目里怎么开始
 
-| 工具 | 作用 |
-|---|---|
-| `check` | 执行项目约束检查;无 `commands.check` 时内置执行通用 lint constraints |
-| `context` | 项目宪法全文 + 能力索引(AI 入口,改代码前必调) |
-| `create_spec` | 安全创建新的业务规格文件,不生成模板 |
-| `info` | 查看项目 harness 接入状态,不执行测试 |
-| `doctor` | 静态自检 harness 接入问题,不执行测试 |
-| `flow` | 列出或执行端到端用户旅程,支持 dryRun |
-| `list_capabilities` | 列出能力,支持 `@tag` / 名字前缀过滤 |
-| `ls` | 扫描工作区,发现已接入 `harness.yaml` 的项目 |
-| `read_spec` | 读单个能力的 .feature 全文(模糊匹配) |
-| `run` | 执行普通业务验证命令,解析报告并返回摘要 |
-| `search` | 全文搜所有 .feature,带上下文 |
-| `update_spec` | 整文件 rewrite,默认做 Gherkin 语法校验 |
-| `verify` | spawn `harness.yaml.verify.cmd`,解析报告,带 git diff |
-| `ping` | 健康检查 |
+在你的项目根目录创建:
 
-## 宿主项目接入
-
-```
+```text
 your-project/
-├── harness.yaml            # 接入声明(见 examples/sel-service-yaml/)
+├── harness.yaml
 └── harness/
-    ├── _charter/           # 项目宪法,多文件
-    │   ├── architecture.feature
+    ├── _charter/
     │   └── conventions.feature
-    ├── constraints/        # 项目约束,给 check 执行
-    │   └── no-broad-catch.feature
+    ├── constraints/
+    │   └── no-low-quality-diff.feature
     └── <业务域>/
-        └── <能力>.feature  # 一个能力 = 一个文件(规格 + 示例合并)
+        └── <业务能力>.feature
 ```
 
-`harness.yaml` 模板:
+最小 `harness.yaml`:
+
+```yaml
+version: 1
+spec_dir: harness
+charter_dir: harness/_charter
+```
+
+不要把 `spec_dir` 写成 `harness/specs` 这类 AI 自己发明的目录。`check` 默认扫描 `harness/constraints`，`flow` 默认扫描 `harness/flows`，业务 feature 放在 `harness/<业务域>` 下即可。
+
+加上验证命令:
 
 ```yaml
 version: 1
@@ -78,51 +93,109 @@ spec_dir: harness
 charter_dir: harness/_charter
 
 verify:
-  cmd: "mvn -pl harness-runner test"
+  cmd: "mvn test"
   workdir: "."
-  filter_pattern: '-Dcucumber.filter.name="{capability}"'
   report:
     format: cucumber-json
-    path: harness-runner/target/cucumber.json
+    path: target/cucumber.json
   timeout_ms: 600000
 
-commands:
-  run:
-    cmd: "mvn -pl harness-runner test"
-    workdir: "."
-    report:
-      format: cucumber-json
-      path: harness-runner/target/cucumber.json
-    timeout_ms: 600000
-  flow:
-    cmd: "mvn -pl harness-runner test -Dgroups=flow"
-    workdir: "."
-    filter_pattern: '-Dcucumber.filter.name="{flow}"'
-    report:
-      format: cucumber-json
-      path: harness-runner/target/flow-cucumber.json
-    timeout_ms: 600000
-  check:
-    cmd: "mvn -pl harness-runner test -Dgroups=constraint"
-    workdir: "."
-    report:
-      format: cucumber-json
-      path: harness-runner/target/check-cucumber.json
-    timeout_ms: 600000
-
 ai_hints: |
-  - 改任何业务代码前先调 context
-  - 改实现前先 update_spec
-  - 改完调 verify 验证
+  - 改业务代码前先调 context
+  - 新增业务先 create_spec
+  - 业务改动先 update_spec
+  - 改完跑 verify 和 check
 ```
 
-`commands.check` 是可选的。没配时,`check` 会直接执行 `harness/constraints/**/*.feature`
-里的通用约束步骤;配了则把检查交给宿主项目命令,适合接 Cucumber/Semgrep/PMD/Checkstyle。
-内置 diff 扫描会读取 `git diff HEAD` 的新增行,并把 untracked 新文件按新增内容处理。
+第一次测试建议按这个顺序:
 
-## 内置 constraints 写法
+```text
+help -> info -> doctor -> context -> create_spec/read_spec -> verify -> check
+```
 
-diff-aware 规则用于限制本次修改,适合防止 AI 新增不符合项目风格的代码:
+## 目录说明
+
+| 路径 | 作用 |
+|---|---|
+| `harness.yaml` | 项目接入配置 |
+| `harness/_charter` | 项目宪法,例如架构分层、通用约定、业务红线 |
+| `harness/<业务域>` | 业务能力 feature,会被当作 capability |
+| `harness/constraints` | 约束检查,给 `check` 使用 |
+| `harness/flows` | 端到端用户旅程,给 `flow` 使用 |
+
+`constraints`、`flows`、`_charter` 不会被当成普通业务能力。
+
+## 业务 Feature 怎么写
+
+业务 feature 是 AI 改代码前必须读取的业务契约。它不是代码模块说明,也不是随便写几个场景。
+
+所有 harness `.feature` 文件默认使用中文,文件头先写 `# language: zh-CN`。`create_spec` / `update_spec` 会拒绝业务 feature 缺少这个语言头;`doctor` 会提示 charter、constraints、flows 里的非业务 feature 是否漏写。
+
+必须包含:
+
+- `# language: zh-CN`
+- `# capability: <业务域>.<能力名>`
+- 顶层 `@tag`
+- `功能:` 或 `Feature:`
+- `业务来源`
+- `意图`
+- `边界`
+- `核心承诺`
+- `风险`
+- `待确认`
+- 至少一个 `场景:` 或 `Scenario:`
+
+示例:
+
+```gherkin
+# language: zh-CN
+# capability: answer.start
+@answer
+
+功能: 开始答题
+
+  业务来源:
+    - PRD: 用户提供的自主学答题流程需求
+
+  意图:
+    - 为学生创建或恢复一次可继续作答的答题轮次。
+
+  边界:
+    - 本能力定义开始答题的业务承诺,不规定具体代码类结构。
+
+  核心承诺:
+    - 开始答题必须返回可追踪的 practiceId。
+    - 不支持的来源类型必须显式失败,不能默认兜底。
+
+  风险:
+    - AI 可能为了跑通而吞异常或返回默认轮次。
+
+  待确认:
+    - 无
+
+  场景: 有效请求开始答题
+    假设 学生具备开始答题所需上下文
+    当 开始答题
+    那么 应返回可继续作答的轮次
+```
+
+`业务来源` 必须写明来源类型之一:
+
+- `PRD`
+- `用户提供`
+- `人工确认`
+- `代码推断`
+- `现有测试`
+
+`create_spec` 和 `update_spec` 会拒绝缺少这些信息的 feature。`doctor` 会批量检查已有 feature。
+
+## 约束 Check 怎么写
+
+`check` 用来阻止 AI 本次修改新增低质量代码。它不是普通格式化工具,而是项目红线检查。
+
+内置 `check` 不是自然语言推理器,只认识固定句式。不要把 constraint 写成“假设 AI 正在编写业务代码 / 那么 不得创建过早抽象”这种纯自然语言规则;`doctor` 和 `check(dryRun)` 会把它标成 `Unsupported constraint step`。
+
+例如禁止本次新增宽泛兜底异常:
 
 ```gherkin
 # language: zh-CN
@@ -133,66 +206,54 @@ diff-aware 规则用于限制本次修改,适合防止 AI 新增不符合项目�
     假设 扫描本次新增的 "src/**/*.java" 行
     当 匹配到 "catch\\s*\\(\\s*(Exception|Throwable)\\b"
     那么 应该报错 "本次修改新增了宽泛 catch"
-    而且 修正方式为 "捕获明确异常；确需边界兜底时要记录上下文并重新抛出或转换为业务异常"
-
-  场景: 本次 Java 修改不应新增临时输出
-    假设 扫描本次新增的 "src/**/*.java" 行
-    当 匹配到 "System\\.out\\.println|printStackTrace\\(\\)"
-    那么 应该报错 "本次修改新增了临时输出或堆栈打印"
-    而且 修正方式为 "使用项目日志规范,或删除临时调试代码"
+    而且 修正方式为 "捕获明确异常；确需兜底时写明原因并转换或重新抛出"
 ```
 
-当前内置步骤:
+`扫描本次新增的` 会读取 `git diff HEAD` 的新增行,也会把 untracked 新文件当作新增内容。
 
-- `假设 扫描 "<glob>"` / `Given scanning "<glob>"`
-- `假设 扫描本次新增的 "<glob>" 行` / `Given scanning added lines in "<glob>"`
-- `假设 扫描当前包的 "<ext>" 文件`
-- `当 匹配到 "<regex>"` 或 ``当 匹配到 `<regex>` ``
-- `那么 不应该有匹配`
-- `那么 应该报错 "<message>"`
-- `而且 修正方式为 "<fix>"`
-- `那么 应该存在` / `那么 不应该存在`
-- `当 运行命令 "<cmd>"` + `那么 命令应该成功`
+如果项目已经有 Semgrep、PMD、Checkstyle、ESLint、架构测试等工具,可以把它们接到 `commands.check`。
 
-## .feature 文件约定
+## 工具清单
 
-```gherkin
-# language: zh-CN
-# capability: subject-literacy.getByUid
-# files: service/.../SubjectLiteracyApiServiceImpl.java:173-194
-@subject-literacy
+`help` 只介绍 MCP 怎么用,不读取当前项目、不总结当前项目。了解当前项目用 `context` / `info` / `doctor`,验证当前项目用 `verify` / `check` / `flow`。
 
-功能: 按知识图谱节点UID查询学科素养
-  ...
-```
+| 工具 | 作用 |
+|---|---|
+| `help` | 查看 MCP 工具说明、推荐流程和中文示例 |
+| `context` | AI 进入项目后读取项目宪法、能力索引和使用指引 |
+| `info` | 查看当前项目是否正确接入 |
+| `doctor` | 静态自检配置、目录、feature 质量和 verify 配置 |
+| `ls` | 扫描工作区下的 harness 项目 |
+| `list_capabilities` | 列出业务能力 |
+| `search` | 搜索所有 feature |
+| `read_spec` | 读取单个业务契约 |
+| `create_spec` | 创建新业务 feature |
+| `update_spec` | 修改已有业务 feature |
+| `verify` | 执行 `harness.yaml.verify.cmd` 并解析报告 |
+| `run` | 执行 `commands.run` |
+| `flow` | 列出或执行 `harness/flows/**/*.feature` |
+| `check` | 执行项目约束检查 |
+| `ping` | 健康检查 |
 
-- `# capability:` — 唯一标识(read_spec / verify 用它定位)
-- `# files:` — 关联代码,可选,给 AI 看
-- 顶层 `@tag` — 给 list_capabilities 过滤用
+## 常用命令
 
-## 开发
+本仓库开发验证:
 
 ```bash
-bun run scripts/smoke.ts        # MCP 协议握手
-bun run scripts/test-day3.ts    # context / list_capabilities
-bun run scripts/test-day4.ts    # read_spec / search
-bun run scripts/test-day6.ts    # update_spec
-bun run scripts/test-day7.ts    # verify
-bun run scripts/test-day8-info.ts # info
-bun run scripts/test-day9-doctor.ts # doctor
-bun run scripts/test-day11-ls.ts # ls
-bun run scripts/test-day12-run.ts # run
-bun run scripts/test-day13-flow.ts # flow
-bun run scripts/test-day14-check.ts # check
-bun run scripts/test-day15-create-spec.ts # create_spec
-bun run scripts/test-day16-check-builtin-lint.ts # check built-in constraints
-bun run scripts/test-day17-check-diff-lint.ts # check git diff constraints
+bun run typecheck
+bun run scripts/smoke.ts
+bun run scripts/test-day18-feature-quality.ts
+bun run scripts/test-day17-check-diff-lint.ts
 ```
 
-## 不做
+完整脚本在 `scripts/` 目录。
 
-- ❌ 内置任何语言的 test runner
-- ❌ 内置复杂语言 AST 规则;这类规则请通过 `commands.check` 接 Semgrep/PMD/Checkstyle
-- ❌ Step definition 管理
-- ❌ 持久化历史 / Web UI / 鉴权
-- ❌ 为了“看起来完整”增加模板脚手架;AI 负责写完整规格内容,MCP 只做安全创建和校验
+## 设计边界
+
+`harness-mcp` 只做三件事:
+
+1. 让 AI 读到正确的业务契约和项目约定。
+2. 让 AI 创建/修改 feature 时受到基础质量门禁约束。
+3. 让 AI 调用宿主项目已有验证命令并拿到清晰结果。
+
+真正的业务正确性仍然来自真实需求、feature 契约、测试用例和宿主项目自己的验证命令。

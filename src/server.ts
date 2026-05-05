@@ -6,6 +6,7 @@ import {
   executeContext,
 } from "./tools/context.ts";
 import { CheckInputSchema, executeCheck } from "./tools/check.ts";
+import { HelpInputSchema, executeHelp } from "./tools/help.ts";
 import {
   ListCapabilitiesInputSchema,
   executeListCapabilities,
@@ -19,6 +20,7 @@ import { RunInputSchema, executeRun } from "./tools/run.ts";
 import { SearchInputSchema, executeSearch } from "./tools/search.ts";
 import { UpdateSpecInputSchema, executeUpdateSpec } from "./tools/update_spec.ts";
 import { VerifyInputSchema, executeVerify } from "./tools/verify.ts";
+import { toolDescription } from "./tool_catalog.ts";
 
 export function createServer() {
   const server = new FastMCP({
@@ -28,26 +30,31 @@ export function createServer() {
       "harness-mcp: AI 协作契约层。",
       "",
       "工作流(强烈建议):",
-      "  1. 改业务代码前 → 调 context() 拿项目宪法 + 能力地图",
-      "  2. 锁定要改的能力 → 调 read_spec(capability) 拿契约全文",
-      "  3. 先改契约(规格+示例) → update_spec(capability, new_content)",
-      "  4. 再改实现代码",
-      "  5. 调 verify(capability) 跑测试,看哪些业务语义被破坏",
+      "  1. 新增业务 → 先基于用户提供的 PRD/需求 create_spec,再写测试,再写代码",
+      "  2. 业务改动 → 先 read_spec/update_spec,再改测试,再改代码",
+      "  3. 纯重构 → feature 不变,只用 verify/check 保证行为不变",
+      "  4. 改完 → verify(capability?) 跑业务验证,check() 拦 AI 新增低质量改动",
       "",
-      "若不知道有哪些能力 → list_capabilities() 或 search(query)",
+      "若不知道怎么开始 → help(),再 info()/doctor()/context()",
+      "若用户说 harness help / 执行 harness help / harness-mcp 怎么用 / 有哪些工具 → 只调用 help(),直接返回 MCP 工具手册;禁止调用 info/doctor/context/check/verify 去总结当前项目",
+      "若用户问当前项目有什么、状态如何 → 用 info()/doctor()/context()/check()/verify()",
+      "若不知道有哪些业务能力 → list_capabilities() 或 search(query)",
       "",
       "── Feature 文件协议(所有项目硬性遵守) ──",
+      "  • 所有新建/修改的 harness .feature 文件默认中文,必须写 # language: zh-CN",
       "  • 头部必须有元数据注释:",
       "      # capability: <业务域>.<能力名>     (唯一标识,fuzzy 匹配用)",
-      "      # files: <相对路径>:<行号区间>     (关联代码,可多行)",
       "      @<tag1> @<tag2>                    (顶层标签,过滤用)",
-      "  • 用 Gherkin 语法,中文请加 # language: zh-CN",
-      "  • 一个文件 = 一个能力(规格 + 示例合并)",
+      "  • 业务 feature 使用中文 Gherkin: 功能 / 场景 / 假设 / 当 / 那么",
+      "  • 一个文件 = 一个业务能力契约,不是代码模块说明",
+      "  • 必须包含段落: 业务来源 / 意图 / 边界 / 核心承诺 / 风险 / 待确认",
+      "  • 业务来源必须标明 PRD / 用户提供 / 人工确认 / 代码推断 / 现有测试",
       "",
       "── 目录组织(默认建议,可被项目 charter 覆盖) ──",
+      "  • harness.yaml 推荐固定 spec_dir: harness,不要让 AI 自己发明 harness/specs 这类目录",
       "  • 全局规矩 → charter_dir 下,文件名按主题(architecture / conventions / ...)",
-      "  • 业务能力 → spec_dir 下,深度 2-3 层,推荐:",
-      "      <业务域>/<接口或聚合>/<方法或动作>.feature",
+      "  • 业务能力 → spec_dir 下按业务域/业务动作组织,不要照搬类名/Service/Handler",
+      "  • constraints / flows / charter 也默认中文并加 # language: zh-CN",
       "  • 不要把所有 feature 平铺在一个目录 — 业务一多就爆",
       "  • 项目可在 charter 中明确自己的目录约定,覆盖本默认",
     ].join("\n"),
@@ -55,127 +62,105 @@ export function createServer() {
 
   server.addTool({
     name: "ping",
-    description: "健康检查,返回 pong",
+    description: toolDescription("ping"),
     parameters: z.object({}),
     execute: async () => "pong",
   });
 
   server.addTool({
+    name: "help",
+    description: toolDescription("help"),
+    parameters: HelpInputSchema,
+    execute: async (input) => executeHelp(input),
+  });
+
+  server.addTool({
     name: "context",
-    description:
-      "AI 入口工具 — 一次性返回项目宪法全文 + 所有能力索引 + AI 使用指引。" +
-      "改业务代码前必调一次。",
+    description: toolDescription("context"),
     parameters: ContextInputSchema,
     execute: async (input) => executeContext(input),
   });
 
   server.addTool({
     name: "create_spec",
-    description:
-      "安全创建新的业务能力 .feature 文件。AI 提供完整 content;本工具只负责去重、路径安全、# capability 匹配和 Gherkin 校验。",
+    description: toolDescription("create_spec"),
     parameters: CreateSpecInputSchema,
     execute: async (input) => executeCreateSpec(input),
   });
 
   server.addTool({
     name: "list_capabilities",
-    description:
-      "列出所有能力(capability),支持按 @tag 或 name 前缀过滤。" +
-      "比 context 更轻量,适合二次定位。",
+    description: toolDescription("list_capabilities"),
     parameters: ListCapabilitiesInputSchema,
     execute: async (input) => executeListCapabilities(input),
   });
 
   server.addTool({
     name: "ls",
-    description:
-      "扫描目录,发现已接入 harness.yaml 的项目。返回项目路径、能力数量、charter 数量和 verify 是否配置。" +
-      "只读,不执行测试。",
+    description: toolDescription("ls"),
     parameters: LsInputSchema,
     execute: async (input) => executeLs(input),
   });
 
   server.addTool({
     name: "info",
-    description:
-      "查看当前项目的 harness 接入状态:配置路径、规格目录、charter/capability 统计、tag、关联文件、verify 配置。" +
-      "只读,不执行测试。",
+    description: toolDescription("info"),
     parameters: InfoInputSchema,
     execute: async (input) => executeInfo(input),
   });
 
   server.addTool({
     name: "doctor",
-    description:
-      "静态自检当前项目的 harness 接入:检查 harness.yaml、目录、capability 元数据、重复能力名、verify 报告解析支持。" +
-      "只读,不执行测试。",
+    description: toolDescription("doctor"),
     parameters: DoctorInputSchema,
     execute: async (input) => executeDoctor(input),
   });
 
   server.addTool({
     name: "read_spec",
-    description:
-      "读单个能力的 .feature 全文。capability 支持模糊匹配(case-insensitive substring)," +
-      "命中多个会列候选。改业务代码前先调这个工具。",
+    description: toolDescription("read_spec"),
     parameters: ReadSpecInputSchema,
     execute: async (input) => executeReadSpec(input),
   });
 
   server.addTool({
     name: "run",
-    description:
-      "执行 harness.yaml 的 commands.run 普通业务验证命令,解析报告并返回通过/失败摘要。" +
-      "若未配置 commands.run,会兼容回退到 verify。",
+    description: toolDescription("run"),
     parameters: RunInputSchema,
     execute: async (input) => executeRun(input),
   });
 
   server.addTool({
     name: "flow",
-    description:
-      "列出或执行端到端用户旅程。默认扫描 harness/flows/**/*.feature;传 name 时执行 commands.flow。" +
-      "支持 dryRun 只展示命令。",
+    description: toolDescription("flow"),
     parameters: FlowInputSchema,
     execute: async (input) => executeFlow(input),
   });
 
   server.addTool({
     name: "check",
-    description:
-      "执行项目约束检查。默认扫描 harness/constraints/**/*.feature;dryRun 只列出约束。" +
-      "未配置 commands.check 时使用内置通用 lint steps,支持扫描 git diff 新增行;" +
-      "已配置时运行宿主项目 commands.check。",
+    description: toolDescription("check"),
     parameters: CheckInputSchema,
     execute: async (input) => executeCheck(input),
   });
 
   server.addTool({
     name: "search",
-    description:
-      "全文搜索所有 .feature(含 charter),返回匹配行 + 上下文。" +
-      "适用于:不确定哪个能力涉及某关键词时。",
+    description: toolDescription("search"),
     parameters: SearchInputSchema,
     execute: async (input) => executeSearch(input),
   });
 
   server.addTool({
     name: "update_spec",
-    description:
-      "覆盖写入已存在能力的 .feature 完整内容(整文件 rewrite)。" +
-      "默认会做 Gherkin 语法校验,失败拒绝写入。" +
-      "工作流:改业务代码前先用本工具更新规格,再改代码。" +
-      "新增能力时,文件路径建议:<spec_dir>/<业务域>/<接口或聚合>/<方法>.feature(深度 2-3 层)," +
-      "项目 charter 若有覆盖约定,以 charter 为准。",
+    description: toolDescription("update_spec"),
     parameters: UpdateSpecInputSchema,
     execute: async (input) => executeUpdateSpec(input),
   });
 
   server.addTool({
     name: "verify",
-    description:
-      "执行 harness.yaml 配的 verify.cmd(spawn 子进程),解析报告,顺带返回 git diff HEAD。" +
-      "传 capability 可只跑某个能力的场景(走 filter_pattern 占位符替换)。",
+    description: toolDescription("verify"),
     parameters: VerifyInputSchema,
     execute: async (input) => executeVerify(input),
   });

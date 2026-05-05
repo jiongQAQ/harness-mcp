@@ -8,8 +8,10 @@ import { Glob } from "bun";
 import { z } from "zod";
 import { loadConfig } from "../config.ts";
 import {
+  analyzeBuiltinConstraintSteps,
   renderBuiltinConstraintRun,
   runBuiltinConstraints,
+  SUPPORTED_CONSTRAINT_STEP_EXAMPLES,
 } from "../constraint_runner.ts";
 import { resolveProjectRoot } from "../project.ts";
 import { runShell } from "../runner.ts";
@@ -23,7 +25,7 @@ export const CheckInputSchema = z.object({
 
 export type CheckInput = z.infer<typeof CheckInputSchema>;
 
-interface ConstraintSpec {
+export interface ConstraintSpec {
   title: string;
   fileAbs: string;
   fileRel: string;
@@ -45,6 +47,12 @@ export async function executeCheck(input: CheckInput): Promise<string> {
     loaded.specDirAbs,
   );
   const command = loaded.config.commands?.check;
+  const discoveryWarnings = getConstraintDiscoveryWarnings(
+    loaded.projectRoot,
+    loaded.config.spec_dir,
+    loaded.specDirAbs,
+  );
+  const unsupportedSteps = command ? [] : analyzeBuiltinConstraintSteps(constraints);
 
   if (input.dryRun) {
     const payload = {
@@ -66,6 +74,9 @@ export async function executeCheck(input: CheckInput): Promise<string> {
       report_path: command?.report
         ? resolve(loaded.projectRoot, command.workdir ?? ".", command.report.path)
         : null,
+      discovery_warnings: discoveryWarnings,
+      supported_step_examples: SUPPORTED_CONSTRAINT_STEP_EXAMPLES,
+      unsupported_steps: unsupportedSteps,
     };
 
     return input.raw ? JSON.stringify(payload, null, 2) : renderDryRun(payload);
@@ -140,7 +151,7 @@ export async function executeCheck(input: CheckInput): Promise<string> {
   });
 }
 
-async function discoverConstraints(
+export async function discoverConstraints(
   projectRoot: string,
   specDirAbs: string,
 ): Promise<ConstraintSpec[]> {
@@ -166,12 +177,41 @@ async function discoverConstraints(
   return result.sort((a, b) => a.fileRel.localeCompare(b.fileRel));
 }
 
+export function getConstraintDiscoveryWarnings(
+  projectRoot: string,
+  configuredSpecDir: string,
+  specDirAbs: string,
+): string[] {
+  const warnings: string[] = [];
+  const expectedDir = resolve(specDirAbs, "constraints");
+  const conventionalDir = resolve(projectRoot, "harness/constraints");
+  const expectedRel = relative(projectRoot, expectedDir) || "constraints";
+  const conventionalRel = relative(projectRoot, conventionalDir) || "harness/constraints";
+
+  if (configuredSpecDir !== "harness") {
+    warnings.push(
+      `推荐 harness.yaml 使用 spec_dir: harness。当前 spec_dir: ${configuredSpecDir}; check 只扫描 ${expectedRel},不要让 AI 自己发明 harness/specs 这类目录。`,
+    );
+  }
+
+  if (configuredSpecDir !== "harness" && existsSync(conventionalDir)) {
+    warnings.push(
+      `发现 ${conventionalRel},但当前配置下 check 不会扫描它;请改为 spec_dir: harness,或把约束移动到 ${expectedRel}。`,
+    );
+  }
+
+  return warnings;
+}
+
 function renderDryRun(payload: {
   project_root: string;
   constraint_count: number;
   constraints: { title: string; file: string; scenario_count: number }[];
   cmd: string | null;
   workdir: string | null;
+  discovery_warnings?: string[];
+  supported_step_examples?: readonly string[];
+  unsupported_steps?: { featureFile: string; step: string }[];
 }): string {
   const lines = [
     `Constraints: ${payload.constraint_count}`,
@@ -195,6 +235,30 @@ function renderDryRun(payload: {
     lines.push(`  cwd: ${payload.workdir}`);
   } else {
     lines.push("(commands.check not configured)");
+  }
+
+  if (payload.discovery_warnings?.length) {
+    lines.push("");
+    lines.push("Discovery warnings:");
+    for (const warning of payload.discovery_warnings) {
+      lines.push(`  - ${warning}`);
+    }
+  }
+
+  if (payload.unsupported_steps?.length) {
+    lines.push("");
+    lines.push("Unsupported constraint steps:");
+    for (const issue of payload.unsupported_steps) {
+      lines.push(`  - ${issue.featureFile}: ${issue.step}`);
+    }
+  }
+
+  if (payload.supported_step_examples?.length) {
+    lines.push("");
+    lines.push("Supported built-in check steps:");
+    for (const example of payload.supported_step_examples) {
+      lines.push(`  - ${example}`);
+    }
   }
 
   return lines.join("\n");

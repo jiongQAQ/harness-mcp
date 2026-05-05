@@ -60,6 +60,29 @@ export interface BuiltinConstraintRun {
   results: ConstraintScenarioResult[];
 }
 
+export interface UnsupportedConstraintStepIssue {
+  feature: string;
+  scenario: string;
+  featureFile: string;
+  line?: number;
+  step: string;
+  stepLine?: number;
+}
+
+export const SUPPORTED_CONSTRAINT_STEP_EXAMPLES = [
+  '假设 扫描本次新增的 "server/**/*.ts" 行',
+  '假设 扫描 "server/**/*.ts"',
+  '假设 扫描当前包的 "ts" 文件',
+  '当 匹配到 "console\\\\.log"',
+  '那么 应该报错 "本次修改新增了调试输出"',
+  '而且 修正方式为 "删除调试输出；确需日志时使用项目统一 logger"',
+  "那么 不应该有匹配",
+  "那么 应该存在",
+  "那么 不应该存在",
+  '当 运行命令 "npm test"',
+  "那么 命令应该成功",
+] as const;
+
 interface ParsedScenario {
   feature: string;
   scenario: string;
@@ -131,6 +154,55 @@ export async function runBuiltinConstraints(
     report: { summary, failures },
     results,
   };
+}
+
+export function analyzeBuiltinConstraintSteps(
+  constraints: BuiltinConstraintSource[],
+): UnsupportedConstraintStepIssue[] {
+  return constraints.flatMap((constraint) =>
+    parseConstraintScenarios(constraint).flatMap((scenario) =>
+      scenario.steps
+        .filter((step) => !isBuiltinConstraintStepSupported(step.text))
+        .map((step) => ({
+          feature: scenario.feature,
+          scenario: scenario.scenario,
+          featureFile: constraint.fileRel,
+          line: scenario.line,
+          step: step.text.trim(),
+          stepLine: step.line,
+        })),
+    ),
+  );
+}
+
+export function isBuiltinConstraintStepSupported(stepText: string): boolean {
+  const text = stepText.trim();
+  return Boolean(
+    text.match(/^扫描本次新增的 "([^"]*)" 行$/) ||
+      text.match(/^scanning added lines in "([^"]*)"$/) ||
+      text.match(/^扫描 "([^"]*)"$/) ||
+      text.match(/^scanning "([^"]*)"$/) ||
+      text.match(/^扫描当前包的 "([^"]*)" 文件$/) ||
+      text.match(/^scanning "([^"]*)" files in current package$/) ||
+      text.match(/^匹配到 "([^"]*)"$/) ||
+      text.match(/^matching "([^"]*)"$/) ||
+      text.match(/^匹配到 `([^`]*)`$/) ||
+      text.match(/^matching `([^`]*)`$/) ||
+      text === "不应该有匹配" ||
+      text === "there should be no matches" ||
+      text.match(/^应该报错 "([^"]*)"$/) ||
+      text.match(/^it should report "([^"]*)"$/) ||
+      text.match(/^修正方式为 "([^"]*)"$/) ||
+      text.match(/^the fix is "([^"]*)"$/) ||
+      text === "应该存在" ||
+      text === "should exist" ||
+      text === "不应该存在" ||
+      text === "should not exist" ||
+      text.match(/^运行命令 "([^"]*)"$/) ||
+      text.match(/^run command "([^"]*)"$/) ||
+      text === "命令应该成功" ||
+      text === "command should succeed"
+  );
 }
 
 export function renderBuiltinConstraintRun(run: BuiltinConstraintRun): string {

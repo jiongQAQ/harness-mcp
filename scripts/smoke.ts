@@ -81,6 +81,7 @@ const expectedTools = [
   "create_spec",
   "doctor",
   "flow",
+  "help",
   "info",
   "list_capabilities",
   "ls",

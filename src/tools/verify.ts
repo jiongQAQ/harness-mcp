@@ -1,5 +1,5 @@
 /**
- * F5 verify — 跑外部测试命令,解析报告,带 git diff
+ * F5 verify — 跑外部测试命令并解析报告。
  */
 import { resolve } from "node:path";
 import { z } from "zod";
@@ -16,7 +16,11 @@ export const VerifyInputSchema = z.object({
     .string()
     .optional()
     .describe("能力名(模糊匹配,需精确命中 1 个)。不传则跑全部"),
-  include_diff: z.boolean().optional().default(true),
+  include_diff: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("默认 false; true 时附带 git diff。通常失败后让 AI 自行查看 diff 即可"),
   raw: z.boolean().optional(),
 });
 
@@ -84,7 +88,7 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
   // git diff
   let gitDiff = "";
   let gitTruncated = false;
-  if (input.include_diff !== false) {
+  if (input.include_diff) {
     const d = await captureGitDiff(loaded.projectRoot);
     gitDiff = d.diff;
     gitTruncated = d.truncated;
@@ -101,8 +105,8 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
         duration_ms: runResult.durationMs,
         report: parsed,
         report_path: reportPathAbs,
-        git_diff: gitDiff,
-        git_diff_truncated: gitTruncated,
+        git_diff: input.include_diff ? gitDiff : null,
+        git_diff_truncated: input.include_diff ? gitTruncated : false,
         stdout_tail: runResult.stdout.slice(-2000),
         stderr_tail: runResult.stderr.slice(-2000),
       },
@@ -146,8 +150,7 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
     out.push("(harness.yaml 未配置 report,跳过报告解析)");
   }
 
-  // git diff
-  if (input.include_diff !== false) {
+  if (input.include_diff) {
     out.push("");
     if (!gitDiff) {
       out.push("── Git Diff ── (无未提交改动 / 非 git 仓库)");
