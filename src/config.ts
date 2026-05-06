@@ -10,37 +10,45 @@ import { z } from "zod";
 const ReportSchema = z.object({
   format: z.enum(["cucumber-json", "surefire-xml", "pytest-json"]),
   path: z.string(),
-});
+}).strict();
 
 const CommandSchema = z.object({
   cmd: z.string(),
   workdir: z.string().optional().default("."),
   report: ReportSchema.optional(),
   timeout_ms: z.number().optional().default(300_000),
-});
+}).strict();
 
-const VerifySchema = CommandSchema.extend({
-  filter_pattern: z.string().optional(),
-});
+const BddSchema = z.object({
+  runner: z.enum([
+    "cucumber-js",
+    "cucumber-jvm",
+    "behave",
+    "pytest-bdd",
+    "godog",
+    "custom",
+  ]),
+  cmd: z.string(),
+  workdir: z.string().optional().default("."),
+  feature_arg_pattern: z.string().optional().default("{feature}"),
+  name_filter_pattern: z.string().optional(),
+  report: ReportSchema,
+  timeout_ms: z.number().optional().default(300_000),
+}).strict();
 
-const FilterableCommandSchema = CommandSchema.extend({
-  filter_pattern: z.string().optional(),
-});
+const CommandsSchema = z.object({
+  run: CommandSchema.optional(),
+  check: CommandSchema.optional(),
+}).strict();
 
 export const ConfigSchema = z.object({
   version: z.literal(1),
   spec_dir: z.string().default("harness"),
   charter_dir: z.string().optional(),
-  verify: VerifySchema.optional(),
-  commands: z
-    .object({
-      run: CommandSchema.optional(),
-      flow: FilterableCommandSchema.optional(),
-      check: CommandSchema.optional(),
-    })
-    .optional(),
+  bdd: BddSchema.optional(),
+  commands: CommandsSchema.optional(),
   ai_hints: z.string().optional(),
-});
+}).strict();
 
 export type HarnessConfig = z.infer<typeof ConfigSchema>;
 

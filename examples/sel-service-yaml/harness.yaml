@@ -2,10 +2,12 @@ version: 1
 spec_dir: harness
 charter_dir: harness/_charter
 
-verify:
-  cmd: "echo 'fake mvn output'"
+bdd:
+  runner: cucumber-jvm
+  cmd: "echo 'fake bdd output'"
   workdir: "."
-  filter_pattern: '-Dcucumber.filter.name="{capability}"'
+  feature_arg_pattern: '"{feature}"'
+  name_filter_pattern: '-Dcucumber.filter.name="{name}"'
   report:
     format: cucumber-json
     path: target/cucumber.json

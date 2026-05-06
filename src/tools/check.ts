@@ -15,7 +15,7 @@ import {
 } from "../constraint_runner.ts";
 import { resolveProjectRoot } from "../project.ts";
 import { runShell } from "../runner.ts";
-import { parseCucumberJson, type ParsedReport } from "../parsers/cucumber-json.ts";
+import { parseReport, type ParsedReport } from "../parsers/report.ts";
 
 export const CheckInputSchema = z.object({
   path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
@@ -113,9 +113,7 @@ export async function executeCheck(input: CheckInput): Promise<string> {
   let reportPathAbs: string | null = null;
   if (command.report) {
     reportPathAbs = resolve(workdir, command.report.path);
-    if (command.report.format === "cucumber-json") {
-      parsed = await parseCucumberJson(reportPathAbs);
-    }
+    parsed = await parseReport(command.report.format, reportPathAbs);
   }
 
   if (input.raw) {

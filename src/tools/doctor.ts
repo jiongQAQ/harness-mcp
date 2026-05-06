@@ -13,6 +13,7 @@ import {
   checkFeatureQuality,
   hasZhCnLanguageHeader,
 } from "../feature_quality.ts";
+import { SUPPORTED_REPORT_FORMATS } from "../parsers/report.ts";
 import { resolveProjectRoot } from "../project.ts";
 import {
   discoverConstraints,
@@ -47,7 +48,6 @@ interface HarnessFeatureMeta {
   content: string;
 }
 
-const SUPPORTED_REPORT_FORMATS = new Set(["cucumber-json"]);
 const CAP_RE = /^#\s*capability:\s*(.+)\s*$/m;
 
 export async function executeDoctor(input: DoctorInput): Promise<string> {
@@ -244,51 +244,65 @@ export async function executeDoctor(input: DoctorInput): Promise<string> {
             .join("; "),
   });
 
-  const verifyCfg = loaded.config.verify;
-  if (!verifyCfg) {
+  const bddCfg = loaded.config.bdd;
+  const detectedRunners = await detectBddRunners(loaded.projectRoot);
+  if (!bddCfg) {
     checks.push({
-      id: "verify.configured",
+      id: "bdd.configured",
       level: "warn",
-      message: "verify is not configured",
+      message: "bdd is not configured; verify/flow cannot execute .feature files",
+      detail:
+        detectedRunners.length > 0
+          ? `detected possible runner(s): ${detectedRunners.join(", ")}`
+          : "configure bdd.runner and bdd.cmd in harness.yaml",
     });
   } else {
+    const runnerMatches =
+      detectedRunners.length === 0 ||
+      bddCfg.runner === "custom" ||
+      detectedRunners.includes(bddCfg.runner);
     checks.push({
-      id: "verify.configured",
+      id: "bdd.configured",
       level: "pass",
-      message: "verify is configured",
-      detail: verifyCfg.cmd,
+      message: `bdd is configured (${bddCfg.runner})`,
+      detail: bddCfg.cmd,
     });
 
-    if (!verifyCfg.report) {
-      checks.push({
-        id: "verify.report.format",
-        level: "warn",
-        message: "verify report is not configured",
-      });
-    } else {
-      const supported = SUPPORTED_REPORT_FORMATS.has(verifyCfg.report.format);
-      checks.push({
-        id: "verify.report.format",
-        level: supported ? "pass" : "fail",
-        message: supported
-          ? `${verifyCfg.report.format} report parser is supported`
-          : `${verifyCfg.report.format} report parser is not implemented`,
-      });
+    checks.push({
+      id: "bdd.runner.detected",
+      level: runnerMatches ? "pass" : "warn",
+      message:
+        detectedRunners.length === 0
+          ? "no host BDD runner manifest detected"
+          : `detected possible runner(s): ${detectedRunners.join(", ")}`,
+      detail:
+        detectedRunners.length > 0 && !runnerMatches
+          ? `configured runner: ${bddCfg.runner}`
+          : undefined,
+    });
 
-      const reportPath = resolve(
-        loaded.projectRoot,
-        verifyCfg.workdir ?? ".",
-        verifyCfg.report.path,
-      );
-      checks.push({
-        id: "verify.report.path_exists",
-        level: existsSync(reportPath) ? "pass" : "warn",
-        message: existsSync(reportPath)
-          ? "verify report file exists"
-          : "verify report file does not exist yet",
-        detail: reportPath,
-      });
-    }
+    const supported = SUPPORTED_REPORT_FORMATS.has(bddCfg.report.format);
+    checks.push({
+      id: "bdd.report.format",
+      level: supported ? "pass" : "fail",
+      message: supported
+        ? `${bddCfg.report.format} report parser is supported`
+        : `${bddCfg.report.format} report parser is not implemented`,
+    });
+
+    const reportPath = resolve(
+      loaded.projectRoot,
+      bddCfg.workdir ?? ".",
+      bddCfg.report.path,
+    );
+    checks.push({
+      id: "bdd.report.path_exists",
+      level: existsSync(reportPath) ? "pass" : "warn",
+      message: existsSync(reportPath)
+        ? "bdd report file exists"
+        : "bdd report file does not exist yet",
+      detail: reportPath,
+    });
   }
 
   return renderDoctor(
@@ -456,4 +470,53 @@ function renderDoctor(
     lines.push("");
   }
   return lines.join("\n").trimEnd();
+}
+
+async function detectBddRunners(projectRoot: string): Promise<string[]> {
+  const detected = new Set<string>();
+
+  const packageJson = await readOptional(resolve(projectRoot, "package.json"));
+  if (packageJson) {
+    try {
+      const pkg = JSON.parse(packageJson);
+      const deps = {
+        ...(pkg.dependencies ?? {}),
+        ...(pkg.devDependencies ?? {}),
+      };
+      if (deps["@cucumber/cucumber"]) detected.add("cucumber-js");
+    } catch {
+      // ignore malformed host package.json here; config validation is separate
+    }
+  }
+
+  const pomXml = await readOptional(resolve(projectRoot, "pom.xml"));
+  if (pomXml && /io\.cucumber|cucumber-java|cucumber-junit/i.test(pomXml)) {
+    detected.add("cucumber-jvm");
+  }
+
+  const pythonConfigs = (
+    await Promise.all([
+      readOptional(resolve(projectRoot, "pyproject.toml")),
+      readOptional(resolve(projectRoot, "pytest.ini")),
+      readOptional(resolve(projectRoot, "setup.cfg")),
+    ])
+  ).join("\n");
+  if (/\bbehave\b/i.test(pythonConfigs)) detected.add("behave");
+  if (/pytest-bdd/i.test(pythonConfigs)) detected.add("pytest-bdd");
+
+  const goMod = await readOptional(resolve(projectRoot, "go.mod"));
+  if (goMod && /github\.com\/cucumber\/godog/i.test(goMod)) {
+    detected.add("godog");
+  }
+
+  return [...detected].sort();
+}
+
+async function readOptional(path: string): Promise<string> {
+  if (!existsSync(path)) return "";
+  try {
+    return await readFile(path, "utf-8");
+  } catch {
+    return "";
+  }
 }

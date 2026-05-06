@@ -61,13 +61,6 @@ export function createServer() {
   });
 
   server.addTool({
-    name: "ping",
-    description: toolDescription("ping"),
-    parameters: z.object({}),
-    execute: async () => "pong",
-  });
-
-  server.addTool({
     name: "help",
     description: toolDescription("help"),
     parameters: HelpInputSchema,

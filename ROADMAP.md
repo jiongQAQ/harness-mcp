@@ -36,24 +36,23 @@ Implemented MCP tools:
 | `create_spec` | Safely create a new capability `.feature` file from AI-supplied full content. |
 | `info` | Show current harness wiring without executing tests. |
 | `doctor` | Statically diagnose harness wiring issues without executing tests. |
-| `flow` | List or execute end-to-end journeys from `harness/flows`. |
+| `flow` | List or execute end-to-end journey `.feature` files from `harness/flows` and validate report coverage. |
 | `list_capabilities` | List capability `.feature` files by tag or prefix. |
 | `ls` | Discover harness-enabled projects under a workspace. |
 | `read_spec` | Read one capability spec by fuzzy match. |
 | `run` | Execute the configured normal business check command and parse its report. |
 | `search` | Search all `.feature` files under `spec_dir`. |
 | `update_spec` | Rewrite an existing capability spec with Gherkin validation. |
-| `verify` | Run `harness.yaml.verify.cmd`, parse cucumber-json, include git diff. |
-| `ping` | Health check. |
+| `verify` | Execute capability `.feature` files through `bdd`, parse cucumber-json or surefire-xml, include git diff. |
 
 Current limitations:
 
 - No tier model like `instructions`, `methods`, `flows`, `boundaries`, `constraints`.
-- `run` exists as a basic command adapter, but is not tier-aware yet.
-- `flow` exists as a basic command adapter over `harness/flows`, but is not tier-aware yet.
+- `run` exists as a basic command adapter for non-BDD host checks.
+- `flow` uses the same BDD runner config as `verify` and validates report coverage.
 - `check` exists as a basic command adapter over `harness/constraints`, but does not inherit dependency constraints yet.
 - No historical result store or `report`.
-- `verify` only parses `cucumber-json`; schema mentions other report formats but they are not implemented.
+- `verify` parses `cucumber-json` and `surefire-xml`; `pytest-json` is still schema-only.
 - No template scaffolding tool by design; `create_spec` only validates and safely writes AI-supplied full content.
 
 ## Target Capability Model
@@ -121,7 +120,7 @@ Validation:
 
 Goal: align with HarnessX concepts while preserving language independence.
 
-Extend `harness.yaml` with optional tiers:
+Longer-term tier ideas remain separate from the current BDD execution model:
 
 ```yaml
 version: 1
@@ -144,27 +143,31 @@ commands:
     report:
       format: cucumber-json
       path: target/cucumber.json
-  flow:
-    cmd: "mvn test -Dgroups=flow"
-    report:
-      format: cucumber-json
-      path: target/flow-cucumber.json
   check:
     cmd: "mvn test -Dgroups=constraint"
     report:
       format: cucumber-json
       path: target/check-cucumber.json
+
+bdd:
+  runner: cucumber-jvm
+  cmd: "mvn test"
+  feature_arg_pattern: '"{feature}"'
+  name_filter_pattern: '-Dcucumber.filter.name="{name}"'
+  report:
+    format: cucumber-json
+    path: target/cucumber.json
 ```
 
 Backward compatibility:
 
-- Existing `spec_dir`, `charter_dir`, and `verify` should keep working.
-- Internally, old config can be normalized into the new tier model.
+- Existing `spec_dir` and `charter_dir` keep working.
+- Old `verify.cmd` / `commands.flow` config has been removed in favor of top-level `bdd`.
 
 Validation:
 
-- Old fixture still works unchanged.
-- New tiered fixture works.
+- Fixture uses top-level `bdd`.
+- New tiered fixture works when it also provides `bdd`.
 - `context`, `search`, and `read_spec` operate across tiers.
 
 ### Phase 4: Add `run`, `flow`, and `check`
@@ -175,12 +178,12 @@ Added:
 
 - `run`
   - Runs normal behavior checks.
-  - Supports `commands.run`, `raw`, report parsing, and compatibility fallback to `verify`.
+  - Supports `commands.run`, `raw`, and report parsing.
   - Should not run flows or constraints by default.
 - `flow`
   - Lists flows from `harness/flows/**/*.feature`.
   - Runs one flow by Feature title substring.
-  - Supports `dryRun`.
+  - Supports `dryRun` and BDD report coverage validation.
 - `check`
   - Lists constraints from `harness/constraints/**/*.feature` in `dryRun`.
   - Runs `commands.check` separately from normal behavior checks and flows.
@@ -248,7 +251,6 @@ Goal: support common host ecosystems.
 
 Add parsers:
 
-- `surefire-xml` for Java.
 - `pytest-json` or pytest JUnit XML for Python.
 - Optional generic JUnit XML.
 

@@ -17,7 +17,8 @@ if (!loaded) {
 console.log("projectRoot:", loaded.projectRoot);
 console.log("specDirAbs:", loaded.specDirAbs);
 console.log("charterDirAbs:", loaded.charterDirAbs);
-console.log("verify.cmd:", loaded.config.verify?.cmd);
+console.log("bdd.runner:", loaded.config.bdd?.runner);
+console.log("bdd.cmd:", loaded.config.bdd?.cmd);
 console.log("ai_hints lines:", loaded.config.ai_hints?.split("\n").length);
 
 console.log("\n=== Test 2: discoverCapabilities ===");

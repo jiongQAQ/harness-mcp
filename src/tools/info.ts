@@ -47,20 +47,26 @@ export async function executeInfo(input: InfoInput): Promise<string> {
   const linkedFiles = [
     ...new Set(capabilities.flatMap((c) => c.filesLinked)),
   ].sort();
-  const verifyCfg = loaded.config.verify;
-  const verify = verifyCfg
+  const bddCfg = loaded.config.bdd;
+  const bdd = bddCfg
     ? {
         configured: true,
-        cmd: verifyCfg.cmd,
-        workdir: verifyCfg.workdir,
-        report_format: verifyCfg.report?.format ?? null,
-        report_path: verifyCfg.report?.path ?? null,
-        timeout_ms: verifyCfg.timeout_ms,
+        runner: bddCfg.runner,
+        cmd: bddCfg.cmd,
+        workdir: bddCfg.workdir,
+        feature_arg_pattern: bddCfg.feature_arg_pattern,
+        name_filter_pattern: bddCfg.name_filter_pattern ?? null,
+        report_format: bddCfg.report.format,
+        report_path: bddCfg.report.path,
+        timeout_ms: bddCfg.timeout_ms,
       }
     : {
         configured: false,
+        runner: null,
         cmd: null,
         workdir: null,
+        feature_arg_pattern: null,
+        name_filter_pattern: null,
         report_format: null,
         report_path: null,
         timeout_ms: null,
@@ -75,7 +81,7 @@ export async function executeInfo(input: InfoInput): Promise<string> {
     capability_count: capabilities.length,
     tags,
     linked_files: linkedFiles,
-    verify,
+    bdd,
     capabilities: capabilities.map((c) => ({
       name: c.name,
       file: c.fileRel,
@@ -119,20 +125,23 @@ export async function executeInfo(input: InfoInput): Promise<string> {
   }
   lines.push("");
 
-  if (payload.verify.configured) {
-    lines.push("Verify: verify configured");
-    lines.push(`  cmd: ${payload.verify.cmd}`);
-    lines.push(`  workdir: ${payload.verify.workdir}`);
-    if (payload.verify.report_format || payload.verify.report_path) {
-      lines.push(
-        `  report: ${payload.verify.report_format ?? "(none)"} ${
-          payload.verify.report_path ?? ""
-        }`.trimEnd(),
-      );
+  if (payload.bdd.configured) {
+    lines.push("BDD: bdd configured");
+    lines.push(`  runner: ${payload.bdd.runner}`);
+    lines.push(`  cmd: ${payload.bdd.cmd}`);
+    lines.push(`  workdir: ${payload.bdd.workdir}`);
+    lines.push(`  feature_arg_pattern: ${payload.bdd.feature_arg_pattern}`);
+    if (payload.bdd.name_filter_pattern) {
+      lines.push(`  name_filter_pattern: ${payload.bdd.name_filter_pattern}`);
     }
-    lines.push(`  timeout_ms: ${payload.verify.timeout_ms}`);
+    lines.push(
+      `  report: ${payload.bdd.report_format ?? "(none)"} ${
+        payload.bdd.report_path ?? ""
+      }`.trimEnd(),
+    );
+    lines.push(`  timeout_ms: ${payload.bdd.timeout_ms}`);
   } else {
-    lines.push("Verify: not configured");
+    lines.push("BDD: not configured");
   }
   lines.push("");
 

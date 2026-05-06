@@ -15,6 +15,9 @@ const missingCapabilityRoot = resolve(tmpRoot, "missing-capability");
 const duplicateCapabilityRoot = resolve(tmpRoot, "duplicate-capability");
 const unsupportedReportRoot = resolve(tmpRoot, "unsupported-report");
 const nonBusinessLanguageRoot = resolve(tmpRoot, "non-business-language");
+const jsBddDetectRoot = resolve(tmpRoot, "js-bdd-detect");
+const javaBddDetectRoot = resolve(tmpRoot, "java-bdd-detect");
+const pythonBddDetectRoot = resolve(tmpRoot, "python-bdd-detect");
 
 await cp(fixtureRoot, missingCapabilityRoot, { recursive: true });
 await cp(fixtureRoot, duplicateCapabilityRoot, { recursive: true });
@@ -24,6 +27,9 @@ await mkdir(resolve(nonBusinessLanguageRoot, "harness/billing"), { recursive: tr
 await mkdir(resolve(nonBusinessLanguageRoot, "harness/_charter"), { recursive: true });
 await mkdir(resolve(nonBusinessLanguageRoot, "harness/constraints"), { recursive: true });
 await mkdir(resolve(nonBusinessLanguageRoot, "harness/flows"), { recursive: true });
+await mkdir(resolve(jsBddDetectRoot, "harness"), { recursive: true });
+await mkdir(resolve(javaBddDetectRoot, "harness"), { recursive: true });
+await mkdir(resolve(pythonBddDetectRoot, "harness"), { recursive: true });
 
 const getByUidPath = "harness/ai-learning/subject-literacy/getByUid.feature";
 const deleteByIdPath = "harness/ai-learning/subject-literacy/deleteById.feature";
@@ -53,7 +59,7 @@ const unsupportedYaml = await readFile(
 );
 await writeFile(
   resolve(unsupportedReportRoot, "harness.yaml"),
-  unsupportedYaml.replace("format: cucumber-json", "format: surefire-xml"),
+  unsupportedYaml.replace("format: cucumber-json", "format: pytest-json"),
   "utf-8",
 );
 
@@ -128,6 +134,33 @@ await writeFile(
     假设 用户打开下单页
     当 用户提交订单
     那么 应看到订单编号
+`,
+  "utf-8",
+);
+
+for (const root of [jsBddDetectRoot, javaBddDetectRoot, pythonBddDetectRoot]) {
+  await writeFile(
+    resolve(root, "harness.yaml"),
+    `version: 1
+spec_dir: harness
+`,
+    "utf-8",
+  );
+}
+await writeFile(
+  resolve(jsBddDetectRoot, "package.json"),
+  JSON.stringify({ devDependencies: { "@cucumber/cucumber": "^11.0.0" } }),
+  "utf-8",
+);
+await writeFile(
+  resolve(javaBddDetectRoot, "pom.xml"),
+  `<project><dependencies><dependency><groupId>io.cucumber</groupId><artifactId>cucumber-java</artifactId></dependency></dependencies></project>`,
+  "utf-8",
+);
+await writeFile(
+  resolve(pythonBddDetectRoot, "pyproject.toml"),
+  `[project]
+dependencies = ["behave", "pytest-bdd"]
 `,
   "utf-8",
 );
@@ -241,6 +274,39 @@ send({
 });
 await wait(500);
 
+send({
+  jsonrpc: "2.0",
+  id: 67,
+  method: "tools/call",
+  params: {
+    name: "doctor",
+    arguments: { raw: true, path: jsBddDetectRoot },
+  },
+});
+await wait(500);
+
+send({
+  jsonrpc: "2.0",
+  id: 68,
+  method: "tools/call",
+  params: {
+    name: "doctor",
+    arguments: { raw: true, path: javaBddDetectRoot },
+  },
+});
+await wait(500);
+
+send({
+  jsonrpc: "2.0",
+  id: 69,
+  method: "tools/call",
+  params: {
+    name: "doctor",
+    arguments: { raw: true, path: pythonBddDetectRoot },
+  },
+});
+await wait(500);
+
 proc.kill();
 await wait(200);
 
@@ -324,7 +390,7 @@ console.log(
 assert(unsupportedReport?.status === "fail", "unsupported report status should fail");
 assert(
   unsupportedReport?.checks?.some(
-    (c: any) => c.id === "verify.report.format" && c.level === "fail",
+    (c: any) => c.id === "bdd.report.format" && c.level === "fail",
   ),
   "unsupported report should fail report format check",
 );
@@ -346,6 +412,55 @@ assert(
       String(c.detail ?? "").includes("harness/flows/checkout.feature"),
   ),
   "doctor should warn when charter/constraints/flows miss # language: zh-CN",
+);
+
+const jsBddDetect = parse(67);
+console.log(
+  "=== doctor raw js bdd detect ===\n" +
+    text(67).slice(0, 800) +
+    "...\n",
+);
+assert(
+  jsBddDetect?.checks?.some(
+    (c: any) =>
+      c.id === "bdd.configured" &&
+      c.level === "warn" &&
+      String(c.detail ?? "").includes("cucumber-js"),
+  ),
+  "doctor should recommend cucumber-js when package.json includes @cucumber/cucumber",
+);
+
+const javaBddDetect = parse(68);
+console.log(
+  "=== doctor raw java bdd detect ===\n" +
+    text(68).slice(0, 800) +
+    "...\n",
+);
+assert(
+  javaBddDetect?.checks?.some(
+    (c: any) =>
+      c.id === "bdd.configured" &&
+      c.level === "warn" &&
+      String(c.detail ?? "").includes("cucumber-jvm"),
+  ),
+  "doctor should recommend cucumber-jvm when pom.xml includes cucumber",
+);
+
+const pythonBddDetect = parse(69);
+console.log(
+  "=== doctor raw python bdd detect ===\n" +
+    text(69).slice(0, 800) +
+    "...\n",
+);
+assert(
+  pythonBddDetect?.checks?.some(
+    (c: any) =>
+      c.id === "bdd.configured" &&
+      c.level === "warn" &&
+      String(c.detail ?? "").includes("behave") &&
+      String(c.detail ?? "").includes("pytest-bdd"),
+  ),
+  "doctor should recommend Python BDD runners from pyproject.toml",
 );
 
 await rm(tmpRoot, { recursive: true, force: true });

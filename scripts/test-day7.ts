@@ -3,7 +3,7 @@
  * Day 7-8 端到端测试 — verify
  *
  * 在 tmp 目录搭建一个假项目:
- *   harness.yaml.verify.cmd 用 echo 写一个固定的 cucumber.json 出来
+ *   harness.yaml.bdd.cmd 用 echo 写一个固定的 cucumber.json 出来
  *   两份:全绿 / 一个失败
  */
 import { spawn } from "node:child_process";
@@ -18,15 +18,17 @@ await cp(fixtureRoot, tmpRoot, { recursive: true });
 const reportPath = resolve(tmpRoot, "target/cucumber.json");
 await mkdir(resolve(tmpRoot, "target"), { recursive: true });
 
-// 改 harness.yaml — verify.cmd 用 sh -c,把 filter_pattern 当成 echo 参数验证模板替换
+// 改 harness.yaml — bdd.cmd 用 sh -c,把 name_filter_pattern 当成 echo 参数验证模板替换
 const verifyYaml = `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
 
-verify:
+bdd:
+  runner: cucumber-js
   cmd: 'cp "$REPORT_SRC" target/cucumber.json && echo'
   workdir: "."
-  filter_pattern: '"filter={capability}"'
+  feature_arg_pattern: '"{feature}"'
+  name_filter_pattern: '"bdd-name={name}"'
   report:
     format: cucumber-json
     path: target/cucumber.json
@@ -46,6 +48,24 @@ const reportPass = JSON.stringify([
         type: "scenario",
         name: "uid 下挂多条 — 全部返回",
         line: 17,
+        steps: [{ name: "测试", result: { status: "passed" } }],
+      },
+      {
+        type: "scenario",
+        name: "uid 下无记录 — 返回空列表",
+        line: 25,
+        steps: [{ name: "测试", result: { status: "passed" } }],
+      },
+    ],
+  },
+  {
+    uri: "harness/ai-learning/subject-literacy/deleteById.feature",
+    name: "按主键ID软删学科素养",
+    elements: [
+      {
+        type: "scenario",
+        name: "正常删除",
+        line: 23,
         steps: [{ name: "测试", result: { status: "passed" } }],
       },
     ],
@@ -74,7 +94,7 @@ const reportFail = JSON.stringify([
       },
       {
         type: "scenario",
-        name: "uid 下无记录 — 空列表",
+        name: "uid 下无记录 — 返回空列表",
         line: 25,
         steps: [{ name: "断言", result: { status: "passed" } }],
       },
@@ -168,8 +188,8 @@ const txt = (arr: any[], id: number) => arr.find((r) => r.id === id)?.result?.co
 
 const a = txt(responses, 40);
 console.log("=== A: verify all pass ===\n" + a + "\n");
-if (!a.includes("passed=1") || !a.includes("failed=0")) {
-  console.error("❌ FAIL: A — should report 1 passed");
+if (!a.includes("passed=3") || !a.includes("failed=0")) {
+  console.error("❌ FAIL: A — should report 3 passed");
   pass = false;
 }
 if (a.includes("Git Diff")) {
@@ -187,8 +207,8 @@ if (!b.includes("Expected 2, got 0")) {
   console.error("❌ FAIL: B should show error message");
   pass = false;
 }
-if (!b.includes('"filter=subject-literacy.getByUid"')) {
-  console.error("❌ FAIL: B should expand filter_pattern");
+if (!b.includes('"bdd-name=subject-literacy.getByUid"')) {
+  console.error("❌ FAIL: B should expand name_filter_pattern");
   pass = false;
 }
 

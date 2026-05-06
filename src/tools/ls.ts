@@ -36,7 +36,7 @@ interface ProjectSummary {
   charter_dir: string | null;
   capability_count: number | null;
   charter_count: number | null;
-  verify_configured: boolean | null;
+  bdd_configured: boolean | null;
   error?: string;
 }
 
@@ -93,8 +93,8 @@ export async function executeLs(input: LsInput): Promise<string> {
     lines.push(`    config: ${pkg.config_path}`);
     if (pkg.status === "ok") {
       lines.push(
-        `    capabilities=${pkg.capability_count} charter=${pkg.charter_count} verify=${
-          pkg.verify_configured ? "yes" : "no"
+        `    capabilities=${pkg.capability_count} charter=${pkg.charter_count} bdd=${
+          pkg.bdd_configured ? "yes" : "no"
         }`,
       );
     } else {
@@ -151,7 +151,7 @@ async function summarizeProject(
         charter_dir: null,
         capability_count: null,
         charter_count: null,
-        verify_configured: null,
+        bdd_configured: null,
         error: "harness.yaml not found",
       };
     }
@@ -174,7 +174,7 @@ async function summarizeProject(
       charter_dir: loaded.charterDirAbs,
       capability_count: capabilities.length,
       charter_count: charterCount,
-      verify_configured: Boolean(loaded.config.verify),
+      bdd_configured: Boolean(loaded.config.bdd),
     };
   } catch (e) {
     return {
@@ -186,7 +186,7 @@ async function summarizeProject(
       charter_dir: null,
       capability_count: null,
       charter_count: null,
-      verify_configured: null,
+      bdd_configured: null,
       error: (e as Error).message,
     };
   }

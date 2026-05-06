@@ -6,9 +6,16 @@ import { z } from "zod";
 import { loadConfig } from "../config.ts";
 import { discoverCapabilities, matchCapabilities } from "../capability.ts";
 import { resolveProjectRoot } from "../project.ts";
-import { runShell, applyTemplate } from "../runner.ts";
+import { runShell } from "../runner.ts";
 import { captureGitDiff } from "../git.ts";
-import { parseCucumberJson, type ParsedReport } from "../parsers/cucumber-json.ts";
+import { parseReport, type ParsedReport } from "../parsers/report.ts";
+import {
+  buildBddCommand,
+  checkBddCoverage,
+  targetFromCapability,
+  type BddCoverageResult,
+  type BddTarget,
+} from "../bdd.ts";
 
 export const VerifyInputSchema = z.object({
   path: z.string().optional(),
@@ -30,18 +37,17 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
   const root = resolveProjectRoot(input.path);
   const loaded = await loadConfig(root);
   if (!loaded) return `No harness.yaml found at ${root}`;
-  if (!loaded.config.verify) {
-    return "harness.yaml 未配置 verify 块,无法执行测试。";
+  if (!loaded.config.bdd) {
+    return "harness.yaml 未配置 bdd,无法执行 BDD verify。";
   }
 
-  // 决定 capability(可选)
-  let capabilityName: string | undefined;
+  const caps = await discoverCapabilities(
+    loaded.projectRoot,
+    loaded.specDirAbs,
+    loaded.charterDirAbs,
+  );
+  let targets: BddTarget[];
   if (input.capability) {
-    const caps = await discoverCapabilities(
-      loaded.projectRoot,
-      loaded.specDirAbs,
-      loaded.charterDirAbs,
-    );
     const matched = matchCapabilities(caps, input.capability);
     if (matched.length === 0) {
       return `未找到能力 "${input.capability}"`;
@@ -52,40 +58,29 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
         matched.map((c) => `  • ${c.name}`).join("\n")
       );
     }
-    capabilityName = matched[0]!.name;
+    targets = [await targetFromCapability(matched[0]!)];
+  } else {
+    targets = await Promise.all(caps.map((cap) => targetFromCapability(cap)));
   }
 
-  // 拼命令
-  const verifyCfg = loaded.config.verify;
-  let cmd = verifyCfg.cmd;
-  if (capabilityName && verifyCfg.filter_pattern) {
-    const filter = applyTemplate(verifyCfg.filter_pattern, {
-      capability: capabilityName,
-    });
-    cmd = `${cmd} ${filter}`;
+  if (targets.length === 0) {
+    return "未找到可验证的 capability feature。";
   }
 
-  // 工作目录
-  const workdir = resolve(loaded.projectRoot, verifyCfg.workdir ?? ".");
+  const bddCfg = loaded.config.bdd;
+  const workdir = resolve(loaded.projectRoot, bddCfg.workdir ?? ".");
+  const cmd = buildBddCommand(bddCfg, targets, { cwd: workdir });
 
-  // 跑命令
   const runResult = await runShell(cmd, {
     cwd: workdir,
-    timeoutMs: verifyCfg.timeout_ms,
+    timeoutMs: bddCfg.timeout_ms,
   });
 
-  // 解析报告
   let parsed: ParsedReport | null = null;
-  let reportPathAbs: string | null = null;
-  if (verifyCfg.report) {
-    reportPathAbs = resolve(workdir, verifyCfg.report.path);
-    if (verifyCfg.report.format === "cucumber-json") {
-      parsed = await parseCucumberJson(reportPathAbs);
-    }
-    // 其他格式待补:surefire-xml / pytest-json
-  }
+  const reportPathAbs = resolve(workdir, bddCfg.report.path);
+  parsed = await parseReport(bddCfg.report.format, reportPathAbs);
+  const coverage = checkBddCoverage(parsed, targets);
 
-  // git diff
   let gitDiff = "";
   let gitTruncated = false;
   if (input.include_diff) {
@@ -99,12 +94,21 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
       {
         cmd,
         workdir,
-        capability: capabilityName ?? null,
+        bdd_runner: bddCfg.runner,
+        capability: input.capability ? targets[0]?.name ?? null : null,
+        targets: targets.map((target) => ({
+          kind: target.kind,
+          name: target.name,
+          title: target.title,
+          file: target.fileRel,
+          scenarios: target.scenarioNames,
+        })),
         exit_code: runResult.exitCode,
         timed_out: runResult.timedOut,
         duration_ms: runResult.durationMs,
         report: parsed,
         report_path: reportPathAbs,
+        bdd_coverage: coverage,
         git_diff: input.include_diff ? gitDiff : null,
         git_diff_truncated: input.include_diff ? gitTruncated : false,
         stdout_tail: runResult.stdout.slice(-2000),
@@ -115,26 +119,55 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
     );
   }
 
-  // 文本格式
+  return renderVerifyRun({
+    cmd,
+    workdir,
+    exitCode: runResult.exitCode,
+    timedOut: runResult.timedOut,
+    durationMs: runResult.durationMs,
+    parsed,
+    reportPathAbs,
+    coverage,
+    includeDiff: input.include_diff,
+    gitDiff,
+    gitTruncated,
+    stderr: runResult.stderr,
+  });
+}
+
+function renderVerifyRun(args: {
+  cmd: string;
+  workdir: string;
+  exitCode: number;
+  timedOut: boolean;
+  durationMs: number;
+  parsed: ParsedReport | null;
+  reportPathAbs: string;
+  coverage: BddCoverageResult;
+  includeDiff: boolean;
+  gitDiff: string;
+  gitTruncated: boolean;
+  stderr: string;
+}): string {
   const out: string[] = [];
-  out.push(`$ ${cmd}`);
-  out.push(`  cwd: ${workdir}`);
+  out.push(`$ ${args.cmd}`);
+  out.push(`  cwd: ${args.workdir}`);
   out.push(
-    `  exit=${runResult.exitCode}${runResult.timedOut ? " (TIMED OUT)" : ""}, ${
-      runResult.durationMs
+    `  exit=${args.exitCode}${args.timedOut ? " (TIMED OUT)" : ""}, ${
+      args.durationMs
     }ms`,
   );
   out.push("");
 
-  if (parsed) {
-    const s = parsed.summary;
+  if (args.parsed) {
+    const s = args.parsed.summary;
     out.push(
       `── Test Summary ── total=${s.total} passed=${s.passed} failed=${s.failed} skipped=${s.skipped} pending=${s.pending}`,
     );
-    if (parsed.failures.length > 0) {
+    if (args.parsed.failures.length > 0) {
       out.push("");
       out.push("── Failures ──");
-      for (const f of parsed.failures) {
+      for (const f of args.parsed.failures) {
         out.push(`  ✗ ${f.feature} › ${f.scenario}`);
         if (f.featureFile) out.push(`      ${f.featureFile}${f.line ? `:${f.line}` : ""}`);
         if (f.failedStep) out.push(`      step: ${f.failedStep}`);
@@ -144,28 +177,42 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
         }
       }
     }
-  } else if (verifyCfg.report) {
-    out.push(`(report 文件未生成或解析失败: ${reportPathAbs})`);
   } else {
-    out.push("(harness.yaml 未配置 report,跳过报告解析)");
+    out.push(`(report 文件未生成或解析失败: ${args.reportPathAbs})`);
   }
 
-  if (input.include_diff) {
+  out.push("");
+  renderCoverage(args.coverage, out);
+
+  if (args.includeDiff) {
     out.push("");
-    if (!gitDiff) {
+    if (!args.gitDiff) {
       out.push("── Git Diff ── (无未提交改动 / 非 git 仓库)");
     } else {
-      out.push(`── Git Diff (HEAD)${gitTruncated ? " — truncated" : ""} ──`);
-      out.push(gitDiff);
+      out.push(`── Git Diff (HEAD)${args.gitTruncated ? " — truncated" : ""} ──`);
+      out.push(args.gitDiff);
     }
   }
 
-  // stderr 摘要(若有)
-  if (runResult.stderr.trim()) {
+  if (args.stderr.trim()) {
     out.push("");
     out.push("── stderr (tail) ──");
-    out.push(runResult.stderr.slice(-1000).trimEnd());
+    out.push(args.stderr.slice(-1000).trimEnd());
   }
 
   return out.join("\n");
+}
+
+function renderCoverage(coverage: BddCoverageResult, out: string[]): void {
+  out.push(`BDD Coverage: ${coverage.ok ? "PASS" : "FAIL"}`);
+  for (const target of coverage.targets) {
+    out.push(
+      `  ${target.ok ? "✓" : "✗"} ${target.name} -> ${target.file}${
+        target.matched_by ? ` (matched by ${target.matched_by})` : ""
+      }`,
+    );
+    if (target.missing_scenarios.length > 0) {
+      out.push(`      missing scenarios: ${target.missing_scenarios.join(", ")}`);
+    }
+  }
 }

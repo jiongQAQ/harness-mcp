@@ -71,6 +71,8 @@ your-project/
     │   └── conventions.feature
     ├── constraints/
     │   └── no-low-quality-diff.feature
+    ├── flows/
+    │   └── checkout.feature
     └── <业务域>/
         └── <业务能力>.feature
 ```
@@ -85,16 +87,19 @@ charter_dir: harness/_charter
 
 不要把 `spec_dir` 写成 `harness/specs` 这类 AI 自己发明的目录。`check` 默认扫描 `harness/constraints`，`flow` 默认扫描 `harness/flows`，业务 feature 放在 `harness/<业务域>` 下即可。
 
-加上验证命令:
+加上 BDD 验证:
 
 ```yaml
 version: 1
 spec_dir: harness
 charter_dir: harness/_charter
 
-verify:
+bdd:
+  runner: cucumber-jvm
   cmd: "mvn test"
   workdir: "."
+  feature_arg_pattern: '"{feature}"'
+  name_filter_pattern: '-Dcucumber.filter.name="{name}"'
   report:
     format: cucumber-json
     path: target/cucumber.json
@@ -107,11 +112,49 @@ ai_hints: |
   - 改完跑 verify 和 check
 ```
 
+`verify` 会选择业务 capability `.feature` 执行；`flow` 会选择 `harness/flows/**/*.feature` 执行。两者都要求解析后的报告覆盖目标 feature 和场景，否则返回 `BDD Coverage: FAIL`。
+
+`bdd.workdir` 是 BDD 命令实际执行目录；`{feature}` 会按这个目录生成相对路径，`report.path` 也相对这个目录解析。比如 `workdir: "runner"` 时，传给 runner 的 feature 可能是 `../harness/order/create-order.feature`。
+
+当前已支持解析的 `bdd.report.format`:
+
+- `cucumber-json`: Cucumber JSON 报告。
+- `surefire-xml`: JUnit/Surefire XML 报告,适用于 Maven Surefire、Gradle JUnit XML、Jest `jest-junit` 等。
+
 第一次测试建议按这个顺序:
 
 ```text
 help -> info -> doctor -> context -> create_spec/read_spec -> verify -> check
 ```
+
+## 从 0 接入后的使用步骤
+
+1. **创建接入骨架**
+   - 新建 `harness.yaml`、`harness/_charter`、`harness/constraints`、`harness/flows` 和至少一个业务域目录。
+   - 先用最小配置跑通 `info` / `doctor`；有 BDD runner 后再补 `bdd`。
+
+2. **沉淀项目规则**
+   - 在 `_charter` 写架构分层、命名、异常、日志、事务和安全红线。
+   - AI 开始改代码前调用 `context`，读取这些项目规则和能力索引。
+
+3. **沉淀业务契约**
+   - 新业务用 `create_spec` 创建 capability `.feature`。
+   - 已有业务变更先用 `read_spec` 读取，再用 `update_spec` 更新业务承诺。
+   - 业务 feature 必须写清楚来源、意图、边界、核心承诺、风险、待确认和场景。
+
+4. **连接验证命令**
+   - 普通测试接到 `commands.run`，用 `run` 执行。
+   - BDD 测试接到 `bdd`，用 `verify` 执行业务 capability，用 `flow` 执行用户旅程。
+   - `verify` / `flow` 不只看命令退出码，还会检查报告是否覆盖目标 feature 和场景。
+
+5. **连接质量红线**
+   - 有现成 Semgrep、ESLint、PMD、Checkstyle 或架构测试时，接到 `commands.check`。
+   - 没有现成工具时，在 `harness/constraints` 写内置 diff-aware 规则，用 `check` 扫本次新增代码。
+
+6. **日常开发闭环**
+   - 新增业务: `context` -> `create_spec` -> 写测试 -> 写代码 -> `verify` -> `check`
+   - 修改业务: `context` -> `read_spec` -> `update_spec` -> 改测试/代码 -> `verify` -> `check`
+   - 纯重构: `context` -> 改代码 -> `run` 或 `verify` -> `check`
 
 ## 目录说明
 
@@ -215,6 +258,8 @@ help -> info -> doctor -> context -> create_spec/read_spec -> verify -> check
 
 ## 工具清单
 
+`help()` 一次性返回完整 MCP 工具手册,包含这个 MCP 是干什么的、第一次使用步骤、AI 使用方式、工具清单、推荐流程、中文 feature 写法、check 约束写法、flow 旅程写法和工具说明。用户说 `harness help` 时直接返回完整手册,不需要再追问 topic;`help(topic: "...")` 只用于精确查看某一段。
+
 `help` 只介绍 MCP 怎么用,不读取当前项目、不总结当前项目。了解当前项目用 `context` / `info` / `doctor`,验证当前项目用 `verify` / `check` / `flow`。
 
 | 工具 | 作用 |
@@ -222,18 +267,17 @@ help -> info -> doctor -> context -> create_spec/read_spec -> verify -> check
 | `help` | 查看 MCP 工具说明、推荐流程和中文示例 |
 | `context` | AI 进入项目后读取项目宪法、能力索引和使用指引 |
 | `info` | 查看当前项目是否正确接入 |
-| `doctor` | 静态自检配置、目录、feature 质量和 verify 配置 |
+| `doctor` | 静态自检配置、目录、feature 质量和 BDD 配置 |
 | `ls` | 扫描工作区下的 harness 项目 |
 | `list_capabilities` | 列出业务能力 |
 | `search` | 搜索所有 feature |
 | `read_spec` | 读取单个业务契约 |
 | `create_spec` | 创建新业务 feature |
 | `update_spec` | 修改已有业务 feature |
-| `verify` | 执行 `harness.yaml.verify.cmd` 并解析报告 |
+| `verify` | 通过 `bdd` 配置执行 capability `.feature` 并校验报告覆盖 |
 | `run` | 执行 `commands.run` |
-| `flow` | 列出或执行 `harness/flows/**/*.feature` |
+| `flow` | 列出或执行 `harness/flows/**/*.feature` 并校验报告覆盖 |
 | `check` | 执行项目约束检查 |
-| `ping` | 健康检查 |
 
 ## 常用命令
 
@@ -243,6 +287,7 @@ help -> info -> doctor -> context -> create_spec/read_spec -> verify -> check
 bun run typecheck
 bun run scripts/smoke.ts
 bun run scripts/test-day18-feature-quality.ts
+bun run scripts/test-day21-surefire-xml.ts
 bun run scripts/test-day17-check-diff-lint.ts
 ```
 

@@ -36,14 +36,17 @@ commands:
   run:
     cmd: 'echo "run should not execute from flow" && exit 42'
     workdir: "."
-  flow:
-    cmd: 'cp "$REPORT_SRC" target/flow-cucumber.json && echo'
-    workdir: "."
-    filter_pattern: '"flow={flow}"'
-    report:
-      format: cucumber-json
-      path: target/flow-cucumber.json
-    timeout_ms: 10000
+
+bdd:
+  runner: cucumber-js
+  cmd: 'cp "$REPORT_SRC" target/flow-cucumber.json && echo'
+  workdir: "."
+  feature_arg_pattern: '"{feature}"'
+  name_filter_pattern: '"bdd-name={name}"'
+  report:
+    format: cucumber-json
+    path: target/flow-cucumber.json
+  timeout_ms: 10000
 
 ai_hints: ""
 `;
@@ -168,17 +171,22 @@ console.log("=== flow dryRun raw ===\n" + dryRunText + "\n");
 assert(dryRun?.command_type === "flow", "dryRun command_type should be flow");
 assert(dryRun?.dry_run === true, "dryRun flag should be true");
 assert(
-  dryRun?.cmd?.includes('"flow=Complete checkout flow"'),
-  "dryRun command should include expanded flow filter",
+  dryRun?.cmd?.includes('"harness/flows/checkout.feature"'),
+  "dryRun command should include selected flow feature",
+);
+assert(
+  dryRun?.cmd?.includes('"bdd-name=Complete checkout flow"'),
+  "dryRun command should include expanded flow name filter",
 );
 assert(dryRun?.exit_code === null, "dryRun should not execute command");
 
 const runText = text(92);
 console.log("=== flow run ===\n" + runText + "\n");
-assert(runText.includes('"flow=Complete checkout flow"'), "run should include flow filter");
+assert(runText.includes('"bdd-name=Complete checkout flow"'), "run should include flow name filter");
 assert(runText.includes("Test Summary"), "run should include test summary");
 assert(runText.includes("passed=1"), "run should include passed count");
 assert(runText.includes("failed=0"), "run should include failed count");
+assert(runText.includes("BDD Coverage: PASS"), "run should include BDD coverage pass");
 assert(!runText.includes("run should not execute from flow"), "flow should not execute run command");
 
 await rm(tmpRoot, { recursive: true, force: true });

@@ -36,7 +36,7 @@
 **反向决定**(不抄的部分):
 - ❌ 不读 `package.json`(绑死 TS),改读独立的 `harness.yaml` → 支持 Java/Python/Go
 - ❌ 不内嵌 cucumber-js 执行,spawn 外部命令(`mvn` / `pytest` / `go test` 都行)
-- ❌ 不做 5-tier 目录(instructions/methods/flows/...),只有 `_charter/` + 业务能力两层
+- ❌ 不做 5-tier 目录(instructions/methods/boundaries/...),只保留 `_charter/`、业务能力、`flows/`、`constraints/`
 - ❌ 不做约束跨包继承(YAGNI)
 
 ---
@@ -52,16 +52,14 @@
 | `create_spec` | 安全创建新的业务规格文件 |
 | `info` | 查看项目 harness 接入状态,不执行测试 |
 | `doctor` | 静态自检 harness 接入问题,不执行测试 |
-| `flow` | 列出或执行端到端用户旅程 |
+| `flow` | 列出或执行端到端用户旅程 `.feature`,并校验报告覆盖 |
 | `list_capabilities` | 列能力,支持 `@tag` / 名字前缀过滤 |
 | `ls` | 扫描工作区里哪些项目接入了 harness |
 | `read_spec` | 读单个能力的 .feature 全文(模糊匹配,0/1/many 三种 UX) |
 | `run` | 跑普通业务验证命令,解析报告 |
 | `search` | 全文搜所有 .feature,带上下文 |
 | `update_spec` | 整文件 rewrite,默认做 Gherkin 语法校验 |
-| `verify` | spawn 外部测试命令 + 解析 cucumber-json + 带 git diff |
-
-加一个 `ping` 健康检查。
+| `verify` | 通过 `bdd` 配置执行 capability `.feature` + 解析报告 + 校验覆盖 + 可选 git diff |
 
 ### 不做的事
 
@@ -116,6 +114,8 @@ your-project/
     ├── _charter/            # 项目宪法,多文件
     │   ├── architecture.feature
     │   └── conventions.feature
+    ├── flows/
+    │   └── <用户旅程>.feature
     └── <业务域>/
         └── <能力>.feature
 ```
@@ -127,10 +127,12 @@ version: 1
 spec_dir: harness
 charter_dir: harness/_charter
 
-verify:
+bdd:
+  runner: cucumber-jvm
   cmd: "mvn -pl harness-runner test"
   workdir: "."
-  filter_pattern: '-Dcucumber.filter.name="{capability}"'
+  feature_arg_pattern: '"{feature}"'
+  name_filter_pattern: '-Dcucumber.filter.name="{name}"'
   report:
     format: cucumber-json
     path: harness-runner/target/cucumber.json
@@ -162,6 +164,7 @@ ai_hints: |
 - ✅ Day 4: read_spec + search
 - ✅ Day 6: update_spec + Gherkin 校验
 - ✅ Day 7-8: verify + cucumber-json 解析 + git diff
+- ✅ Day 21: surefire/JUnit XML 解析
 - ✅ Day 10: README
 
 ### e2e 测试(全绿)
@@ -181,7 +184,7 @@ ai_hints: |
 1. **真实联调**:把 `examples/sel-service-yaml/harness.yaml` 的 `cmd` 换成真实 `mvn ... test`,接到 Claude Code 跑端到端,验证 P1/P2/P3 是否真闭环
 2. **接入 sel-service**:用户的实际 Java 项目在 `/Users/fanzhijiong/Documents/cvte_project/sel-service`,可以为它起草 charter + 1-2 个能力 feature
 3. **v0.2 工具**:看用 1-2 周后的反馈,优先级高的再加
-4. **多 report 格式**:目前只支持 cucumber-json,可以加 surefire-xml(Java 通用)和 pytest-json
+4. **多 report 格式**:目前支持 cucumber-json 和 surefire-xml,后续可以加 pytest-json
 
 ---
 
@@ -195,6 +198,7 @@ ai_hints: |
 | `src/runner.ts` | runShell + applyTemplate |
 | `src/git.ts` | captureGitDiff(64KB cap) |
 | `src/parsers/cucumber-json.ts` | 状态优先级 failed > skipped > pending > passed |
+| `src/parsers/surefire-xml.ts` | 解析 JUnit/Surefire XML,适配 jest-junit/Maven/Gradle 报告 |
 | `src/gherkin.ts` | @cucumber/gherkin 解析校验(注意 IdGenerator 从 @cucumber/messages 导入,不是 gherkin) |
 | `src/tools/*.ts` | 6 个工具实现 |
 
@@ -205,4 +209,4 @@ ai_hints: |
 - **用户偏好简洁**,响应别啰嗦,别加无关 cleanup
 - **不要碰 sel-service 项目本身**(用户明说"暂时不需要管现有的 sel-service")
 - **软强制就是软强制**,别在工具里硬拒 AI 不调 context 这种事 — 只在 prompt / 描述里提醒
-- 测试 fixture 的命令是 `cp + echo` 拼出来的,改的时候注意命令拼接逻辑(filter_pattern 是直接 append 到 cmd 后面的)
+- 测试 fixture 的命令是 `cp + echo` 拼出来的,改的时候注意 BDD 命令拼接逻辑(feature_arg_pattern/name_filter_pattern 会 append 到 bdd.cmd 后面)

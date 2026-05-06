@@ -6,7 +6,7 @@ import { z } from "zod";
 import { loadConfig } from "../config.ts";
 import { resolveProjectRoot } from "../project.ts";
 import { runShell } from "../runner.ts";
-import { parseCucumberJson, type ParsedReport } from "../parsers/cucumber-json.ts";
+import { parseReport, type ParsedReport } from "../parsers/report.ts";
 
 export const RunInputSchema = z.object({
   path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
@@ -20,9 +20,9 @@ export async function executeRun(input: RunInput): Promise<string> {
   const loaded = await loadConfig(root);
   if (!loaded) return `No harness.yaml found at ${root}`;
 
-  const command = loaded.config.commands?.run ?? loaded.config.verify;
+  const command = loaded.config.commands?.run;
   if (!command) {
-    return "harness.yaml 未配置 commands.run 或 verify,无法执行 run。";
+    return "harness.yaml 未配置 commands.run,无法执行 run。";
   }
 
   const workdir = resolve(loaded.projectRoot, command.workdir ?? ".");
@@ -35,9 +35,7 @@ export async function executeRun(input: RunInput): Promise<string> {
   let reportPathAbs: string | null = null;
   if (command.report) {
     reportPathAbs = resolve(workdir, command.report.path);
-    if (command.report.format === "cucumber-json") {
-      parsed = await parseCucumberJson(reportPathAbs);
-    }
+    parsed = await parseReport(command.report.format, reportPathAbs);
   }
 
   if (input.raw) {

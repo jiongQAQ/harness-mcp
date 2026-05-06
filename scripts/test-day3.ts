@@ -79,8 +79,12 @@ let allPass = true;
 const tools = responses.find((r) => r.id === 2);
 const toolNames = (tools?.result?.tools ?? []).map((t: any) => t.name);
 console.log("Tools registered:", toolNames);
-if (!["ping", "context", "list_capabilities"].every((n) => toolNames.includes(n))) {
+if (!["context", "list_capabilities"].every((n) => toolNames.includes(n))) {
   console.error("❌ FAIL: missing tools");
+  allPass = false;
+}
+if (toolNames.includes("ping")) {
+  console.error("❌ FAIL: ping should not be registered");
   allPass = false;
 }
 

@@ -1,5 +1,5 @@
 /**
- * 子进程执行器 — 跑 harness.yaml.verify.cmd
+ * 子进程执行器 — 跑 harness.yaml 中配置的宿主项目命令。
  */
 import { spawn } from "node:child_process";
 
@@ -53,7 +53,7 @@ export async function runShell(
 }
 
 /**
- * 把 "{capability}" 占位符替换成真实值,转义双引号。
+ * 把 "{name}" / "{feature}" 这类占位符替换成真实值。
  */
 export function applyTemplate(
   template: string,

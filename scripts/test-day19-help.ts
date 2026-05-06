@@ -131,6 +131,18 @@ assert(overview.includes("context"), "overview should mention context");
 assert(overview.includes("create_spec"), "overview should mention create_spec");
 assert(overview.includes("verify"), "overview should mention verify");
 assert(overview.includes("check"), "overview should mention check");
+assert(overview.includes("推荐工作流"), "default help should include workflow details");
+assert(overview.includes("中文业务 Feature 写法"), "default help should include feature authoring guide");
+assert(overview.includes("约束 Check 写法"), "default help should include check authoring guide");
+assert(overview.includes("端到端 Flow 写法"), "default help should include flow authoring guide");
+assert(overview.includes("全部工具"), "default help should include tools details");
+assert(overview.includes("查看单个工具"), "default help should keep tool-specific lookup guidance");
+assert(overview.includes("这个 MCP 是干什么的"), "default help should explain what this MCP is for");
+assert(overview.includes("它不是测试框架"), "default help should explain what harness-mcp is not");
+assert(overview.includes("第一次使用"), "default help should teach first-time usage");
+assert(overview.includes("如果你是 AI"), "default help should tell AI how to use the MCP");
+assert(overview.includes("收到 harness help"), "default help should describe explicit harness help handling");
+assert(overview.includes("不需要再追问 topic"), "default help should not require topic follow-up for harness help");
 
 const featureHelp = text(91);
 console.log("=== help feature ===\n" + featureHelp + "\n");

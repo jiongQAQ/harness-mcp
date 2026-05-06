@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * 简易冒烟测试 — 通过 stdio 给 MCP server 发 JSON-RPC,验证 ping 返回 pong
+ * 简易冒烟测试 — 通过 stdio 给 MCP server 发 JSON-RPC,验证实用工具集可调用
  */
 import { spawn } from "node:child_process";
 
@@ -53,12 +53,12 @@ send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
 
 await new Promise((r) => setTimeout(r, 300));
 
-// Step 3: call ping
+// Step 3: call help as the smallest practical tool
 send({
   jsonrpc: "2.0",
   id: 3,
   method: "tools/call",
-  params: { name: "ping", arguments: {} },
+  params: { name: "help", arguments: { topic: "overview" } },
 });
 
 await new Promise((r) => setTimeout(r, 500));
@@ -70,7 +70,7 @@ for (const r of responses) {
   console.log(JSON.stringify(r, null, 2));
 }
 
-const pingResp = responses.find((r) => r.id === 3);
+const helpResp = responses.find((r) => r.id === 3);
 const toolsResp = responses.find((r) => r.id === 2);
 const toolNames =
   toolsResp?.result?.tools?.map((tool: { name: string }) => tool.name) ?? [];
@@ -85,7 +85,6 @@ const expectedTools = [
   "info",
   "list_capabilities",
   "ls",
-  "ping",
   "read_spec",
   "run",
   "search",
@@ -93,8 +92,13 @@ const expectedTools = [
   "verify",
 ];
 
-if (pingResp?.result?.content?.[0]?.text !== "pong") {
-  console.log("\n❌ FAIL: ping did not return pong");
+if (toolNames.includes("ping")) {
+  console.log("\n❌ FAIL: ping should not be registered");
+  process.exit(1);
+}
+
+if (!String(helpResp?.result?.content?.[0]?.text ?? "").includes("harness-mcp help")) {
+  console.log("\n❌ FAIL: help overview did not return manual text");
   process.exit(1);
 }
 
@@ -110,5 +114,5 @@ if (toolNames.includes("create_capability")) {
   process.exit(1);
 }
 
-console.log("\n✅ PASS: ping returned pong and practical tool set is registered");
+console.log("\n✅ PASS: practical tool set is registered and help is callable");
 process.exit(0);

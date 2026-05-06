@@ -34,9 +34,6 @@ commands:
   run:
     cmd: 'echo "run should not execute from check" && exit 42'
     workdir: "."
-  flow:
-    cmd: 'echo "flow should not execute from check" && exit 43'
-    workdir: "."
   check:
     cmd: 'cp "$REPORT_SRC" target/check-cucumber.json && echo "check all"'
     workdir: "."
@@ -193,7 +190,6 @@ assert(
   "formatted missing failure error",
 );
 assert(!formatted.includes("run should not execute"), "check should not execute run");
-assert(!formatted.includes("flow should not execute"), "check should not execute flow");
 
 const rawText = text(102);
 let raw: any;

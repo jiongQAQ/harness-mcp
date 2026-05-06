@@ -8,8 +8,15 @@ import { Glob } from "bun";
 import { z } from "zod";
 import { loadConfig } from "../config.ts";
 import { resolveProjectRoot } from "../project.ts";
-import { applyTemplate, runShell } from "../runner.ts";
-import { parseCucumberJson, type ParsedReport } from "../parsers/cucumber-json.ts";
+import { runShell } from "../runner.ts";
+import { parseReport, type ParsedReport } from "../parsers/report.ts";
+import {
+  buildBddCommand,
+  checkBddCoverage,
+  readScenarioNames,
+  type BddCoverageResult,
+  type BddTarget,
+} from "../bdd.ts";
 
 export const FlowInputSchema = z.object({
   path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
@@ -25,6 +32,7 @@ interface FlowSpec {
   fileAbs: string;
   fileRel: string;
   scenarioCount: number;
+  scenarioNames: string[];
   lastModified: string;
 }
 
@@ -54,54 +62,51 @@ export async function executeFlow(input: FlowInput): Promise<string> {
   }
 
   const flow = matched[0]!;
-  const command = loaded.config.commands?.flow;
-  if (!command) {
-    return "harness.yaml 未配置 commands.flow,无法执行 flow。";
+  const bddCfg = loaded.config.bdd;
+  if (!bddCfg) {
+    return "harness.yaml 未配置 bdd,无法执行 BDD flow。";
   }
-
-  let cmd = command.cmd;
-  if (command.filter_pattern) {
-    const filter = applyTemplate(command.filter_pattern, { flow: flow.title });
-    cmd = `${cmd} ${filter}`;
-  }
-
-  const workdir = resolve(loaded.projectRoot, command.workdir ?? ".");
+  const target = flowToBddTarget(flow);
+  const workdir = resolve(loaded.projectRoot, bddCfg.workdir ?? ".");
+  const cmd = buildBddCommand(bddCfg, [target], { cwd: workdir });
+  const reportPathAbs = resolve(workdir, bddCfg.report.path);
 
   if (input.dryRun) {
     const payload = {
       command_type: "flow",
       dry_run: true,
+      bdd_runner: bddCfg.runner,
       flow: flow.title,
       file: flow.fileRel,
+      scenarios: flow.scenarioNames,
       cmd,
       workdir,
       exit_code: null,
       report: null,
-      report_path: command.report ? resolve(workdir, command.report.path) : null,
+      report_path: reportPathAbs,
+      bdd_coverage_rule:
+        "parsed report must contain the selected flow feature and all scenarios",
     };
     return input.raw ? JSON.stringify(payload, null, 2) : renderDryRun(payload);
   }
 
   const runResult = await runShell(cmd, {
     cwd: workdir,
-    timeoutMs: command.timeout_ms,
+    timeoutMs: bddCfg.timeout_ms,
   });
 
   let parsed: ParsedReport | null = null;
-  let reportPathAbs: string | null = null;
-  if (command.report) {
-    reportPathAbs = resolve(workdir, command.report.path);
-    if (command.report.format === "cucumber-json") {
-      parsed = await parseCucumberJson(reportPathAbs);
-    }
-  }
+  parsed = await parseReport(bddCfg.report.format, reportPathAbs);
+  const coverage = checkBddCoverage(parsed, [target]);
 
   if (input.raw) {
     return JSON.stringify(
       {
         command_type: "flow",
+        bdd_runner: bddCfg.runner,
         flow: flow.title,
         file: flow.fileRel,
+        scenarios: flow.scenarioNames,
         cmd,
         workdir,
         exit_code: runResult.exitCode,
@@ -109,6 +114,7 @@ export async function executeFlow(input: FlowInput): Promise<string> {
         duration_ms: runResult.durationMs,
         report: parsed,
         report_path: reportPathAbs,
+        bdd_coverage: coverage,
         stdout_tail: runResult.stdout.slice(-2000),
         stderr_tail: runResult.stderr.slice(-2000),
       },
@@ -125,6 +131,7 @@ export async function executeFlow(input: FlowInput): Promise<string> {
     durationMs: runResult.durationMs,
     parsed,
     reportPathAbs,
+    coverage,
     stderr: runResult.stderr,
   });
 }
@@ -143,12 +150,14 @@ async function discoverFlows(
     const content = await readFile(abs, "utf-8");
     const st = await stat(abs);
     const title = content.match(TITLE_RE)?.[1]?.trim() ?? rel.replace(/\.feature$/, "");
-    const scenarioCount = [...content.matchAll(SCENARIO_RE)].length;
+    const scenarioNames = await readScenarioNames(abs);
+    const scenarioCount = scenarioNames.length;
     result.push({
       title,
       fileAbs: abs,
       fileRel: relative(projectRoot, abs),
       scenarioCount,
+      scenarioNames,
       lastModified: st.mtime.toISOString(),
     });
   }
@@ -199,11 +208,13 @@ function renderDryRun(payload: {
   workdir: string;
   flow: string;
   file: string;
+  scenarios?: string[];
 }): string {
   return [
     "Flow dry run",
     `flow: ${payload.flow}`,
     `file: ${payload.file}`,
+    `scenarios: ${payload.scenarios?.length ?? 0}`,
     `$ ${payload.cmd}`,
     `  cwd: ${payload.workdir}`,
   ].join("\n");
@@ -216,7 +227,8 @@ function renderFlowRun(args: {
   timedOut: boolean;
   durationMs: number;
   parsed: ParsedReport | null;
-  reportPathAbs: string | null;
+  reportPathAbs: string;
+  coverage: BddCoverageResult;
   stderr: string;
 }): string {
   const out: string[] = [];
@@ -248,6 +260,9 @@ function renderFlowRun(args: {
     out.push(`(report 文件未生成或解析失败: ${args.reportPathAbs})`);
   }
 
+  out.push("");
+  renderCoverage(args.coverage, out);
+
   if (args.stderr.trim()) {
     out.push("");
     out.push("── stderr (tail) ──");
@@ -255,4 +270,29 @@ function renderFlowRun(args: {
   }
 
   return out.join("\n");
+}
+
+function flowToBddTarget(flow: FlowSpec): BddTarget {
+  return {
+    kind: "flow",
+    name: flow.title,
+    title: flow.title,
+    fileRel: flow.fileRel,
+    fileAbs: flow.fileAbs,
+    scenarioNames: flow.scenarioNames,
+  };
+}
+
+function renderCoverage(coverage: BddCoverageResult, out: string[]): void {
+  out.push(`BDD Coverage: ${coverage.ok ? "PASS" : "FAIL"}`);
+  for (const target of coverage.targets) {
+    out.push(
+      `  ${target.ok ? "✓" : "✗"} ${target.name} -> ${target.file}${
+        target.matched_by ? ` (matched by ${target.matched_by})` : ""
+      }`,
+    );
+    if (target.missing_scenarios.length > 0) {
+      out.push(`      missing scenarios: ${target.missing_scenarios.join(", ")}`);
+    }
+  }
 }

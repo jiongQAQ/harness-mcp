@@ -96,7 +96,7 @@ for (const expected of [
   "charter_count=2",
   "capability_count=2",
   "@subject-literacy",
-  "verify configured",
+  "bdd configured",
 ]) {
   if (!formatted.includes(expected)) {
     console.error(`❌ FAIL: formatted info missing ${expected}`);
@@ -116,8 +116,8 @@ if (!raw || raw.charter_count !== 2 || raw.capability_count !== 2) {
   console.error("❌ FAIL: raw counts malformed");
   pass = false;
 }
-if (raw?.verify?.configured !== true || raw.verify.report_format !== "cucumber-json") {
-  console.error("❌ FAIL: raw verify summary malformed");
+if (raw?.bdd?.configured !== true || raw.bdd.report_format !== "cucumber-json") {
+  console.error("❌ FAIL: raw bdd summary malformed");
   pass = false;
 }
 if (!raw?.capabilities?.some((c: any) => c.name === "subject-literacy.getByUid")) {
