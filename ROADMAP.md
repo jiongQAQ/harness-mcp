@@ -2,10 +2,10 @@
 
 ## Product Positioning
 
-`harness-mcp` is the language-agnostic version of the HarnessX workflow.
+`harness-mcp` is a language-agnostic AI collaboration contract layer.
 The product rule is: keep the tool surface small, clear, and useful.
 
-It should keep the useful HarnessX product shape:
+It should keep a compact product shape:
 
 - `context`: let AI understand project rules before editing code.
 - `info` / `ls`: let humans and AI inspect harness adoption.
@@ -14,14 +14,14 @@ It should keep the useful HarnessX product shape:
 - `check`: run governance constraints.
 - `report`: inspect historical run results.
 
-But it should not copy HarnessX's TypeScript-only execution model directly.
-The execution layer should stay language-agnostic: Java, Python, Go, TypeScript,
-or any other host project should be able to provide its own commands.
+The execution layer should stay language-agnostic: Java, Python, Go,
+TypeScript, or any other host project should be able to provide its own
+commands.
 
 In short:
 
-> Keep HarnessX's workflow and capability model; replace the TS-bound runner
-> with host-project command adapters.
+> Keep business contracts in harness files; execute checks through host-project
+> command adapters.
 
 ## Current State
 
@@ -47,7 +47,7 @@ Implemented MCP tools:
 
 Current limitations:
 
-- No tier model like `instructions`, `methods`, `flows`, `boundaries`, `constraints`.
+- No general tier model beyond the current charter, features, flows, and constraints directories.
 - `run` exists as a basic command adapter for non-BDD host checks.
 - `flow` uses the same BDD runner config as `verify` and validates report coverage.
 - `check` exists as a basic command adapter over `harness/constraints`, but does not inherit dependency constraints yet.
@@ -57,7 +57,8 @@ Current limitations:
 
 ## Target Capability Model
 
-The long-term model should align with HarnessX at the workflow level.
+The long-term model should keep the MCP surface focused around project context,
+business contracts, verification, and governance checks.
 
 | Capability | Purpose | Language-agnostic approach |
 |---|---|---|
@@ -116,9 +117,9 @@ Validation:
 - Verify depth limiting and ignored directories.
 - Keep existing MVP scripts green.
 
-### Phase 3: Upgrade Config to a HarnessX-Like Tier Model
+### Phase 3: Upgrade Config to a Tier Model
 
-Goal: align with HarnessX concepts while preserving language independence.
+Goal: support richer harness knowledge tiers while preserving language independence.
 
 Longer-term tier ideas remain separate from the current BDD execution model:
 
@@ -172,7 +173,7 @@ Validation:
 
 ### Phase 4: Add `run`, `flow`, and `check`
 
-Goal: reproduce HarnessX's execution separation.
+Goal: keep normal runs, flows, and governance checks operationally separate.
 
 Added:
 
@@ -261,7 +262,7 @@ Validation:
 
 ### Phase 7: Dependency Constraints and Advanced Governance
 
-Goal: approach HarnessX's `check` strength.
+Goal: make `check` strong enough for shared project governance.
 
 Still add:
 
@@ -311,13 +312,12 @@ Each new capability should include:
 - No web UI.
 - No auth or multi-tenant server.
 - No forced "AI must call context first" runtime gate.
-- No direct copy of HarnessX's TS step runner as the default execution engine.
 - No standalone template scaffolding/generator tool; AI writes content, MCP validates and safely writes it.
 - No dependency constraint inheritance before local `check` works.
 
 ## Open Decisions
 
-- Should the final config keep the name `harness.yaml`, or also support HarnessX-style `package.json.harness`?
+- Should the final config keep only `harness.yaml`, or support additional config locations?
 - Should result storage be global under the home directory or local under each project?
 - Should `verify` remain as a compatibility alias after `run` exists?
-- How much of HarnessX's CLI surface should exist in this repo, versus MCP-only tools?
+- Should this repo stay MCP-only, or also expose a first-class CLI surface?

@@ -23,25 +23,7 @@
 
 ---
 
-## 二、参考项目
-
-**HarnessX**: `/Users/fanzhijiong/Documents/local_dev/harnessx`(用户本地源码)
-
-借鉴的设计:
-- MCP server 注册多 tool 的结构(`harnessx/src/cli.ts` 的 `startMcpServer()`)
-- context 命令的输入输出契约(`core/src/service/index.ts:524-667`)
-- 模糊匹配:case-insensitive substring(已验证好用)
-- 默认文本 vs `raw: true` JSON 双模式输出
-
-**反向决定**(不抄的部分):
-- ❌ 不读 `package.json`(绑死 TS),改读独立的 `harness.yaml` → 支持 Java/Python/Go
-- ❌ 不内嵌 cucumber-js 执行,spawn 外部命令(`mvn` / `pytest` / `go test` 都行)
-- ❌ 不做 5-tier 目录(instructions/methods/boundaries/...),只保留 `_charter/`、业务能力、`flows/`、`constraints/`
-- ❌ 不做约束跨包继承(YAGNI)
-
----
-
-## 三、要做什么
+## 二、要做什么
 
 ### MVP 核心工具(已完成)
 
@@ -77,7 +59,7 @@
 
 ---
 
-## 四、关键约定
+## 三、关键约定
 
 ### `.feature` 文件格式
 
@@ -146,16 +128,10 @@ ai_hints: |
 
 ---
 
-## 五、目前进度(MVP 已完成)
+## 四、目前进度(MVP 已完成)
 
 ### 项目位置
 `/Users/fanzhijiong/Documents/cvte_project/harness-mcp/`
-
-### 详细设计文档(完整 Plan)
-**`/Users/fanzhijiong/.claude/plans/staged-whistling-lollipop.md`**(原始 plan)
-副本: `/Users/fanzhijiong/Documents/cvte_project/harness-mcp/PLAN.md`
-
-里面有完整的:工具签名、目录结构、harness.yaml 格式、.feature 模板、2 周 实现路径(Day 1 - Day 10)、验证方式。
 
 ### 已完成
 - ✅ Day 1: 项目初始化 + Hello MCP
@@ -179,7 +155,7 @@ ai_hints: |
 
 ---
 
-## 六、下一步建议
+## 五、下一步建议
 
 1. **真实联调**:把 `examples/sel-service-yaml/harness.yaml` 的 `cmd` 换成真实 `mvn ... test`,接到 Claude Code 跑端到端,验证 P1/P2/P3 是否真闭环
 2. **接入 sel-service**:用户的实际 Java 项目在 `/Users/fanzhijiong/Documents/cvte_project/sel-service`,可以为它起草 charter + 1-2 个能力 feature
@@ -188,7 +164,7 @@ ai_hints: |
 
 ---
 
-## 七、关键文件速查
+## 六、关键文件速查
 
 | 文件 | 作用 |
 |---|---|
@@ -204,7 +180,7 @@ ai_hints: |
 
 ---
 
-## 八、给下一个 AI 的提醒
+## 七、给下一个 AI 的提醒
 
 - **用户偏好简洁**,响应别啰嗦,别加无关 cleanup
 - **不要碰 sel-service 项目本身**(用户明说"暂时不需要管现有的 sel-service")
