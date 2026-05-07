@@ -3,7 +3,7 @@
  * Day 15 end-to-end test - create_spec tool.
  */
 import { spawn } from "node:child_process";
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -11,6 +11,44 @@ const repoRoot = resolve(import.meta.dir, "..");
 const fixtureRoot = resolve(repoRoot, "examples/sel-service-yaml");
 const tmpRoot = await mkdtemp(`${tmpdir()}/harness-mcp-create-spec-`);
 await cp(fixtureRoot, tmpRoot, { recursive: true });
+await writeFile(
+  resolve(tmpRoot, "harness/capability-map.yaml"),
+  `version: 1
+domains:
+  demo:
+    capabilities:
+      - id: demo.createDraft
+        file: features/demo/create-draft.feature
+        intent: 创建草稿
+      - id: demo.other
+        file: features/demo/existing-file.feature
+        intent: 文件已存在校验
+      - id: demo.mismatch
+        file: features/demo/mismatch.feature
+        intent: capability 不匹配校验
+      - id: demo.invalid
+        file: features/demo/invalid.feature
+        intent: Gherkin 语法校验
+flows: []
+`,
+  "utf-8",
+);
+await mkdir(resolve(tmpRoot, "harness/features/demo"), { recursive: true });
+await writeFile(
+  resolve(tmpRoot, "harness/features/demo/existing-file.feature"),
+  `# language: zh-CN
+# capability: demo.preExistingForeign
+@demo
+
+功能: 已存在文件
+
+  场景: 占位文件
+    假设 文件已存在
+    当 创建同路径能力
+    那么 应拒绝覆盖
+`,
+  "utf-8",
+);
 
 const proc = spawn("bun", ["run", "src/index.ts"], {
   cwd: repoRoot,
@@ -86,13 +124,28 @@ const validContent = `# language: zh-CN
 
 send({
   jsonrpc: "2.0",
+  id: 109,
+  method: "tools/call",
+  params: {
+    name: "create_spec",
+    arguments: {
+      capability: "demo.legacyPath",
+      file: "demo/legacy-path.feature",
+      content: validContent.replace("demo.createDraft", "demo.legacyPath"),
+    },
+  },
+});
+await wait(500);
+
+send({
+  jsonrpc: "2.0",
   id: 110,
   method: "tools/call",
   params: {
     name: "create_spec",
     arguments: {
       capability: "demo.createDraft",
-      file: "demo/createDraft.feature",
+      file: "features/demo/create-draft.feature",
       content: validContent,
       raw: true,
     },
@@ -108,7 +161,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.createDraft",
-      file: "demo/duplicate.feature",
+      file: "features/demo/create-draft.feature",
       content: validContent,
     },
   },
@@ -123,7 +176,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.other",
-      file: "demo/createDraft.feature",
+      file: "features/demo/existing-file.feature",
       content: validContent.replace("demo.createDraft", "demo.other"),
     },
   },
@@ -138,7 +191,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.mismatch",
-      file: "demo/mismatch.feature",
+      file: "features/demo/mismatch.feature",
       content: validContent,
     },
   },
@@ -168,7 +221,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.invalid",
-      file: "demo/invalid.feature",
+      file: "features/demo/invalid.feature",
       content: "# language: zh-CN\n# capability: demo.invalid\n没有 Feature 行\n",
     },
   },
@@ -191,6 +244,13 @@ const toolNames = (tools?.result?.tools ?? []).map((t: any) => t.name);
 console.log("Tools registered:", toolNames);
 assert(toolNames.includes("create_spec"), "create_spec tool is not registered");
 
+const legacyPath = text(109);
+console.log("\n=== legacy capability path ===\n" + legacyPath + "\n");
+assert(
+  legacyPath.includes("features/<业务域>"),
+  "create_spec should reject capability files outside features/<业务域>",
+);
+
 const createdText = text(110);
 let created: any;
 try {
@@ -201,12 +261,16 @@ try {
 console.log("\n=== create_spec raw success ===\n" + createdText + "\n");
 assert(created?.ok === true, "create_spec should succeed");
 assert(created?.capability === "demo.createDraft", "created capability mismatch");
-assert(created?.file === "harness/demo/createDraft.feature", "created file mismatch");
+assert(created?.file === "harness/features/demo/create-draft.feature", "created file mismatch");
 assert(created?.scenario_count === 1, "created scenario count mismatch");
+assert(
+  created?.next_required_action === "Feature Contract Review",
+  "create_spec success should require Feature Contract Review next",
+);
 
 if (created?.ok === true) {
   const onDisk = await readFile(
-    resolve(tmpRoot, "harness/demo/createDraft.feature"),
+    resolve(tmpRoot, "harness/features/demo/create-draft.feature"),
     "utf-8",
   );
   assert(onDisk.includes("# capability: demo.createDraft"), "created file missing capability");

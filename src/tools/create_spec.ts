@@ -5,6 +5,11 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
+import {
+  findCapabilityMapEntry,
+  loadCapabilityMap,
+  normalizeMapRelPath,
+} from "../capability_map.ts";
 import { discoverCapabilities } from "../capability.ts";
 import { loadConfig } from "../config.ts";
 import {
@@ -13,14 +18,18 @@ import {
 } from "../feature_quality.ts";
 import { validateGherkin } from "../gherkin.ts";
 import { resolveProjectRoot } from "../project.ts";
+import {
+  FEATURE_CONTRACT_REVIEW_ACTION,
+  renderNextRequiredAction,
+} from "../review_protocol.ts";
 
 export const CreateSpecInputSchema = z.object({
   path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
-  capability: z.string().min(1).describe("新能力唯一标识,例如 demo.createDraft"),
+  capability: z.string().min(1).describe("新能力唯一标识,格式建议为 <业务域>.<能力动作>"),
   file: z
     .string()
     .min(1)
-    .describe("相对 spec_dir 的 .feature 文件路径,例如 demo/createDraft.feature"),
+    .describe("相对 spec_dir 的 .feature 文件路径,格式为 features/<业务域>/<能力>.feature"),
   content: z.string().min(1).describe("完整 .feature 内容"),
   raw: z.boolean().optional().describe("true 返回 JSON,false/缺省 返回格式化文本"),
 });
@@ -40,6 +49,25 @@ export async function executeCreateSpec(input: CreateSpecInput): Promise<string>
     input.file,
   );
   if (!target.ok) return target.message;
+
+  const mapLoad = await loadCapabilityMap(loaded.specDirAbs);
+  if (!mapLoad.exists) {
+    return "缺少 capability-map.yaml。请先用 update_map 声明 capability 的 id/file/intent,再 create_spec。";
+  }
+  if (!mapLoad.ok) {
+    return `capability-map.yaml 不合法,请先用 update_map 修正:\n  - ${mapLoad.error}`;
+  }
+  const mapEntry = findCapabilityMapEntry(mapLoad, input.capability);
+  if (!mapEntry) {
+    return `能力 ${input.capability} 未在 capability-map.yaml 中声明,请先用 update_map 更新业务能力地图。`;
+  }
+  if (normalizeMapRelPath(mapEntry.file) !== normalizeMapRelPath(input.file)) {
+    return [
+      `capability-map.yaml 中 ${input.capability} 的 file 是 ${mapEntry.file}`,
+      `当前 create_spec file 是 ${input.file}`,
+      "请按 capability-map.yaml 创建,或先用 update_map 调整 map。",
+    ].join("\n");
+  }
 
   const existingCaps = await discoverCapabilities(
     loaded.projectRoot,
@@ -91,6 +119,7 @@ export async function executeCreateSpec(input: CreateSpecInput): Promise<string>
     file: target.fileRel,
     feature: validation.featureName ?? "",
     scenario_count: validation.scenarioCount ?? 0,
+    next_required_action: FEATURE_CONTRACT_REVIEW_ACTION,
   };
 
   if (input.raw) return JSON.stringify(payload, null, 2);
@@ -100,6 +129,7 @@ export async function executeCreateSpec(input: CreateSpecInput): Promise<string>
     `capability: ${payload.capability}`,
     `Feature: ${payload.feature || "?"}`,
     `scenarios: ${payload.scenario_count}`,
+    renderNextRequiredAction(FEATURE_CONTRACT_REVIEW_ACTION),
   ].join("\n");
 }
 
@@ -111,8 +141,21 @@ function resolveTargetFile(
   if (isAbsolute(file)) {
     return { ok: false, message: "file 必须是 spec_dir 内的相对路径" };
   }
+  if (file.includes("\\")) {
+    return { ok: false, message: "file 不能包含反斜杠,请使用 / 分隔路径" };
+  }
   if (!file.endsWith(".feature")) {
     return { ok: false, message: "file 必须以 .feature 结尾" };
+  }
+  const rawSegments = file.split("/");
+  if (rawSegments.some((segment) => segment === "")) {
+    return { ok: false, message: "file 不能包含空路径段" };
+  }
+  if (rawSegments.some((segment) => segment === ".")) {
+    return { ok: false, message: "file 不能包含 . 路径段" };
+  }
+  if (rawSegments.some((segment) => segment === "..") && !file.startsWith("../")) {
+    return { ok: false, message: "file 不能包含 .. 路径段" };
   }
 
   const abs = resolve(specDirAbs, file);
@@ -123,6 +166,14 @@ function resolveTargetFile(
     isAbsolute(relToSpec)
   ) {
     return { ok: false, message: "file 必须是 spec_dir 内的相对路径" };
+  }
+  const segments = relToSpec.split(/[\\/]+/).filter(Boolean);
+  if (segments[0] !== "features" || segments.length < 3) {
+    return {
+      ok: false,
+      message:
+        "业务 feature 必须放在 features/<业务域>/ 下,例如 features/<domain>/<capability>.feature",
+    };
   }
 
   return {

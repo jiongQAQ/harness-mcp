@@ -1,8 +1,14 @@
 /**
  * F4 update_spec — 改写已存在能力的 .feature(完整内容覆盖),并校验 Gherkin 语法。
  */
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { relative } from "node:path";
 import { z } from "zod";
+import {
+  findCapabilityMapEntry,
+  loadCapabilityMap,
+  normalizeMapRelPath,
+} from "../capability_map.ts";
 import { loadConfig } from "../config.ts";
 import { discoverCapabilities, matchCapabilities } from "../capability.ts";
 import {
@@ -11,6 +17,10 @@ import {
 } from "../feature_quality.ts";
 import { resolveProjectRoot } from "../project.ts";
 import { validateGherkin } from "../gherkin.ts";
+import {
+  FEATURE_CONTRACT_REVIEW_ACTION,
+  renderNextRequiredAction,
+} from "../review_protocol.ts";
 
 export const UpdateSpecInputSchema = z.object({
   path: z.string().optional(),
@@ -24,6 +34,8 @@ export const UpdateSpecInputSchema = z.object({
 });
 
 export type UpdateSpecInput = z.infer<typeof UpdateSpecInputSchema>;
+
+const CAP_RE = /^#\s*capability:\s*(.+)\s*$/m;
 
 export async function executeUpdateSpec(input: UpdateSpecInput): Promise<string> {
   const root = resolveProjectRoot(input.path);
@@ -49,6 +61,36 @@ export async function executeUpdateSpec(input: UpdateSpecInput): Promise<string>
   }
 
   const cap = matched[0]!;
+  const contentCapability = input.content.match(CAP_RE)?.[1]?.trim();
+  if (!contentCapability) {
+    return `content 必须包含 # capability: ${cap.name}`;
+  }
+
+  const currentContent = await readFile(cap.fileAbs, "utf-8");
+  const currentCapability = currentContent.match(CAP_RE)?.[1]?.trim();
+  const targetCapability = currentCapability ?? contentCapability;
+  if (currentCapability && contentCapability !== currentCapability) {
+    return `# capability 不匹配: content 是 "${contentCapability}",目标能力是 "${cap.name}"`;
+  }
+
+  const mapLoad = await loadCapabilityMap(loaded.specDirAbs);
+  if (mapLoad.exists) {
+    if (!mapLoad.ok) {
+      return `capability-map.yaml 不合法,请先用 update_map 修正:\n  - ${mapLoad.error}`;
+    }
+    const mapEntry = findCapabilityMapEntry(mapLoad, targetCapability);
+    if (!mapEntry) {
+      return `能力 ${targetCapability} 未在 capability-map.yaml 中声明,请先用 update_map 更新业务能力地图。`;
+    }
+    const specRel = relative(loaded.specDirAbs, cap.fileAbs);
+    if (normalizeMapRelPath(mapEntry.file) !== normalizeMapRelPath(specRel)) {
+      return [
+        `capability-map.yaml 中 ${targetCapability} 的 file 是 ${mapEntry.file}`,
+        `当前能力文件是 ${specRel}`,
+        "请先用 update_map 修正 map,或移动 feature 后再更新。",
+      ].join("\n");
+    }
+  }
 
   const quality = checkFeatureQuality(input.content, cap.fileRel);
   const languageFailure = quality.failures.some(
@@ -89,6 +131,8 @@ export async function executeUpdateSpec(input: UpdateSpecInput): Promise<string>
       lines.push(`     line ${e.line}: ${e.message}`);
     }
   }
+  lines.push("");
+  lines.push(renderNextRequiredAction(FEATURE_CONTRACT_REVIEW_ACTION));
   lines.push("");
   lines.push("提示: 如果这次改了规格,记得同步实现并跑 verify。");
   return lines.join("\n");

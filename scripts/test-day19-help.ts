@@ -95,6 +95,14 @@ await wait(300);
 
 send({
   jsonrpc: "2.0",
+  id: 96,
+  method: "tools/call",
+  params: { name: "help", arguments: { topic: "bdd" } },
+});
+await wait(300);
+
+send({
+  jsonrpc: "2.0",
   id: 95,
   method: "tools/call",
   params: { name: "help", arguments: { topic: "no-such-topic" } },
@@ -135,10 +143,29 @@ assert(overview.includes("推荐工作流"), "default help should include workfl
 assert(overview.includes("中文业务 Feature 写法"), "default help should include feature authoring guide");
 assert(overview.includes("约束 Check 写法"), "default help should include check authoring guide");
 assert(overview.includes("端到端 Flow 写法"), "default help should include flow authoring guide");
+assert(overview.includes("BDD Feature 与 Step 对齐"), "default help should include BDD traceability guide");
 assert(overview.includes("全部工具"), "default help should include tools details");
 assert(overview.includes("查看单个工具"), "default help should keep tool-specific lookup guidance");
 assert(overview.includes("这个 MCP 是干什么的"), "default help should explain what this MCP is for");
 assert(overview.includes("它不是测试框架"), "default help should explain what harness-mcp is not");
+assert(
+  overview.includes("BDD step definitions") && overview.includes("不要放到 harness/bdd"),
+  "default help should keep BDD step definitions outside harness",
+);
+assert(
+  overview.includes("Then-to-Assertion 自审") && overview.includes("API 断言不能证明 UI 展示"),
+  "default help should require Then-to-Assertion review",
+);
+assert(
+  overview.includes("Feature Contract Review") && overview.includes("先审 feature,再写 steps"),
+  "default help should require feature contract review before BDD steps",
+);
+assert(
+  overview.includes("两类自审不要混用") &&
+    overview.includes("Feature Contract Review 只审 feature 契约") &&
+    overview.includes("Step Evidence Review 只审 step 断言证据"),
+  "default help should clearly separate feature and step self-reviews",
+);
 assert(overview.includes("第一次使用"), "default help should teach first-time usage");
 assert(overview.includes("如果你是 AI"), "default help should tell AI how to use the MCP");
 assert(overview.includes("收到 harness help"), "default help should describe explicit harness help handling");
@@ -150,6 +177,26 @@ assert(featureHelp.includes("# language: zh-CN"), "feature help should include z
 assert(featureHelp.includes("功能:"), "feature help should use Chinese Gherkin");
 assert(featureHelp.includes("场景:"), "feature help should include Chinese scenario");
 assert(featureHelp.includes("业务来源"), "feature help should include business source section");
+assert(featureHelp.includes("Feature Contract Review"), "feature help should include feature self-review");
+assert(featureHelp.includes("自审表"), "feature help should include feature review table");
+assert(featureHelp.includes("Then 必须是可验证的业务结果"), "feature review should require verifiable Then");
+assert(
+  featureHelp.includes("不要把 UI、API、DB、流程混在一个 Then"),
+  "feature review should prevent mixed Then claims",
+);
+assert(
+  featureHelp.includes("触发时机: create_spec/update_spec 写入 feature 后"),
+  "feature review should state it runs after feature writes",
+);
+assert(
+  featureHelp.includes("触发时机: 手动修改 harness .feature 后"),
+  "feature review should state it runs after manual feature changes",
+);
+assert(featureHelp.includes("只审 feature 契约,不审 step 实现"), "feature review should not review steps");
+assert(
+  featureHelp.includes("不因为 verify/flow PASS 触发"),
+  "feature review should not be triggered by verify or flow pass",
+);
 
 const checkHelp = text(92);
 console.log("=== help check ===\n" + checkHelp + "\n");
@@ -170,6 +217,26 @@ assert(raw?.tools?.some((tool: any) => tool.name === "help"), "raw help should l
 assert(raw?.tools?.some((tool: any) => tool.name === "verify"), "raw help should list verify");
 assert(raw?.topics?.includes("feature"), "raw help should list feature topic");
 assert(raw?.topics?.includes("check"), "raw help should list check topic");
+assert(raw?.topics?.includes("bdd"), "raw help should list bdd topic");
+
+const bddHelp = text(96);
+console.log("=== help bdd ===\n" + bddHelp + "\n");
+assert(bddHelp.includes("BDD Feature 与 Step 对齐"), "bdd help should name traceability guide");
+assert(bddHelp.includes("Then-to-Assertion 自审"), "bdd help should require Then-to-Assertion review");
+assert(bddHelp.includes("Step Evidence Review"), "bdd help should name step evidence review");
+assert(bddHelp.includes("API 断言不能证明 UI 展示"), "bdd help should reject API proof for UI Then");
+assert(bddHelp.includes("正确: API Then"), "bdd help should include API-aligned example");
+assert(bddHelp.includes("正确: UI Then"), "bdd help should include UI-aligned example");
+assert(bddHelp.includes("自审表"), "bdd help should require a self-review table");
+assert(
+  bddHelp.includes("触发时机: 写完或修改 BDD step definitions 后"),
+  "bdd help should trigger step review after step changes",
+);
+assert(
+  bddHelp.includes("触发时机: verify/flow PASS 后,宣称 BDD 有效前"),
+  "bdd help should trigger step review after BDD pass before claims",
+);
+assert(bddHelp.includes("只审 step 断言证据,不审 feature 划分"), "bdd help should not review feature boundaries");
 
 const unknown = text(95);
 console.log("=== help unknown ===\n" + unknown + "\n");

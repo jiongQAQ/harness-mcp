@@ -6,6 +6,11 @@ import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { Glob } from "bun";
 import { z } from "zod";
+import {
+  loadCapabilityMap,
+  normalizeMapRelPath,
+  type CapabilityMapLoad,
+} from "../capability_map.ts";
 import { loadConfig } from "../config.ts";
 import { discoverCapabilities, isReservedSpecFeatureRel } from "../capability.ts";
 import { analyzeBuiltinConstraintSteps } from "../constraint_runner.ts";
@@ -38,6 +43,7 @@ interface DoctorCheck {
 
 interface FeatureMeta {
   fileRel: string;
+  specRel: string;
   name: string;
   content: string;
   hasExplicitCapability: boolean;
@@ -49,6 +55,26 @@ interface HarnessFeatureMeta {
 }
 
 const CAP_RE = /^#\s*capability:\s*(.+)\s*$/m;
+const FEATURE_TITLE_RE = /^\s*(?:Feature|功能|功能性|Característica|機能):\s*(.+)$/m;
+const SCENARIO_RE = /^\s*(?:Scenario|场景|場景|Escenario):\s*.+$/gm;
+const STEP_RE = /^\s*(?:Given|When|Then|And|But|假设|当|那么|而且|但是)\s+(.+)$/gm;
+const SECTION_HEADING_RE = /^\s*(业务来源|意图|边界|核心承诺|风险|待确认)\s*[：:]\s*$/;
+const FLOW_TITLE_RE = /(?:流程|全链路|端到端|E2E|workflow|journey)/i;
+const ORDERED_STEP_RE = /(?:先|再|然后|最后|first|then|finally)/i;
+const SCENARIO_COUNT_WARN_LIMIT = 7;
+const CORE_PROMISE_WARN_LIMIT = 6;
+const ORDERED_STEP_WARN_LIMIT = 2;
+const BDD_STEP_DIR_SEGMENTS = new Set(["steps", "step-definitions", "step_definitions"]);
+const BDD_RUNNER_CONFIG_FILES = new Set([
+  "cucumber.js",
+  "cucumber.cjs",
+  "cucumber.mjs",
+  "cucumber.ts",
+  "behave.ini",
+  "pytest.ini",
+]);
+const BDD_STEP_CODE_FILE_RE =
+  /(?:^|[._-])(?:steps?|step[-_]?defs?)(?:[._-]|$).*\.(?:ts|tsx|js|jsx|mjs|cjs|java|kt|py|rb|go|cs)$/i;
 
 export async function executeDoctor(input: DoctorInput): Promise<string> {
   const root = resolveProjectRoot(input.path);
@@ -143,6 +169,61 @@ export async function executeDoctor(input: DoctorInput): Promise<string> {
     detail: duplicates.length === 0 ? undefined : duplicates.join(", "),
   });
 
+  const capabilityMap = await loadCapabilityMap(loaded.specDirAbs);
+  pushCapabilityMapChecks(
+    checks,
+    capabilityMap,
+    loaded.projectRoot,
+    loaded.specDirAbs,
+    featureMeta,
+  );
+
+  const misplacedCapabilities = featureMeta.filter(
+    (feature) => !isRecommendedCapabilitySpecRel(feature.specRel),
+  );
+  checks.push({
+    id: "capabilities.layout",
+    level: misplacedCapabilities.length === 0 ? "pass" : "warn",
+    message:
+      misplacedCapabilities.length === 0
+        ? "capability features are under features/<业务域>"
+        : `${misplacedCapabilities.length} capability feature files are outside features/<业务域>`,
+    detail:
+      misplacedCapabilities.length === 0
+        ? undefined
+        : misplacedCapabilities
+            .map(
+              (feature) =>
+                `${feature.fileRel} -> ${recommendedCapabilityFileRel(
+                  loaded.projectRoot,
+                  loaded.specDirAbs,
+                  feature.specRel,
+                )}`,
+            )
+            .join("; "),
+  });
+
+  const boundaryFindings = featureMeta
+    .map((feature) => ({
+      fileRel: feature.fileRel,
+      reasons: analyzeCapabilityBoundary(feature.content),
+    }))
+    .filter((finding) => finding.reasons.length > 0);
+  checks.push({
+    id: "capabilities.boundary",
+    level: boundaryFindings.length === 0 ? "pass" : "warn",
+    message:
+      boundaryFindings.length === 0
+        ? "capability boundaries look focused"
+        : `${boundaryFindings.length} capability feature files may be too broad`,
+    detail:
+      boundaryFindings.length === 0
+        ? undefined
+        : boundaryFindings
+            .map((finding) => `${finding.fileRel}: ${finding.reasons.join(", ")}`)
+            .join("; "),
+  });
+
   const qualityIssues = featureMeta.flatMap((feature) =>
     checkFeatureQuality(feature.content, feature.fileRel).issues.map((issue) => ({
       ...issue,
@@ -193,6 +274,25 @@ export async function executeDoctor(input: DoctorInput): Promise<string> {
       missingNonBusinessLanguage.length === 0
         ? undefined
         : missingNonBusinessLanguage.map((feature) => feature.fileRel).join(", "),
+  });
+
+  const bddImplementationArtifacts = await collectHarnessBddImplementationArtifacts(
+    loaded.projectRoot,
+    loaded.specDirAbs,
+  );
+  checks.push({
+    id: "harness_contract.no_bdd_implementation",
+    level: bddImplementationArtifacts.length === 0 ? "pass" : "fail",
+    message:
+      bddImplementationArtifacts.length === 0
+        ? "harness contains contract files only; BDD implementation lives in host tests"
+        : `${bddImplementationArtifacts.length} BDD implementation artifacts found under harness`,
+    detail:
+      bddImplementationArtifacts.length === 0
+        ? undefined
+        : bddImplementationArtifacts
+            .map((artifact) => `${artifact.fileRel}: ${artifact.reason}`)
+            .join("; "),
   });
 
   const constraints = await discoverConstraints(
@@ -360,6 +460,7 @@ async function collectFeatureMeta(
     const fileRel = relative(projectRoot, abs);
     result.push({
       fileRel,
+      specRel: rel,
       name: capMatch?.[1]?.trim() ?? fileRel.replace(/\.feature$/, ""),
       content,
       hasExplicitCapability: Boolean(capMatch?.[1]?.trim()),
@@ -367,6 +468,181 @@ async function collectFeatureMeta(
   }
 
   return result;
+}
+
+function isRecommendedCapabilitySpecRel(specRel: string): boolean {
+  const segments = specRel.split(/[\\/]+/).filter(Boolean);
+  return segments[0] === "features" && segments.length >= 3;
+}
+
+function recommendedCapabilityFileRel(
+  projectRoot: string,
+  specDirAbs: string,
+  specRel: string,
+): string {
+  const segments = specRel.split(/[\\/]+/).filter(Boolean);
+  const fileName = segments.at(-1) ?? "capability.feature";
+  if (segments[0] === "features") {
+    return relative(projectRoot, resolve(specDirAbs, "features", "<业务域>", fileName));
+  }
+  if (segments.length < 2) {
+    return relative(projectRoot, resolve(specDirAbs, "features", "<业务域>", fileName));
+  }
+  return relative(projectRoot, resolve(specDirAbs, "features", specRel));
+}
+
+function pushCapabilityMapChecks(
+  checks: DoctorCheck[],
+  capabilityMap: CapabilityMapLoad,
+  projectRoot: string,
+  specDirAbs: string,
+  featureMeta: FeatureMeta[],
+): void {
+  if (!capabilityMap.exists) {
+    checks.push({
+      id: "capability_map.exists",
+      level: "warn",
+      message: "capability-map.yaml is missing",
+      detail: relative(projectRoot, capabilityMap.path),
+    });
+    return;
+  }
+
+  checks.push({
+    id: "capability_map.exists",
+    level: "pass",
+    message: "capability-map.yaml found",
+    detail: relative(projectRoot, capabilityMap.path),
+  });
+
+  if (!capabilityMap.ok) {
+    checks.push({
+      id: "capability_map.valid",
+      level: "fail",
+      message: "capability-map.yaml is invalid",
+      detail: capabilityMap.error,
+    });
+    return;
+  }
+
+  checks.push({
+    id: "capability_map.valid",
+    level: "pass",
+    message: "capability-map.yaml is valid",
+  });
+
+  const mapById = new Map(capabilityMap.capabilities.map((entry) => [entry.id, entry]));
+  const featureByName = new Map(featureMeta.map((feature) => [feature.name, feature]));
+  const featureBySpecRel = new Map(
+    featureMeta.map((feature) => [normalizeMapRelPath(feature.specRel), feature]),
+  );
+  const capabilityErrors: string[] = [];
+  const capabilityWarnings: string[] = [];
+
+  for (const feature of featureMeta) {
+    const mapEntry = mapById.get(feature.name);
+    if (!mapEntry) {
+      capabilityErrors.push(`${feature.fileRel}: 未在 capability-map.yaml 中声明`);
+      continue;
+    }
+    if (normalizeMapRelPath(mapEntry.file) !== normalizeMapRelPath(feature.specRel)) {
+      capabilityErrors.push(
+        `${feature.fileRel}: map file=${mapEntry.file}, actual=${feature.specRel}`,
+      );
+    }
+  }
+
+  for (const mapEntry of capabilityMap.capabilities) {
+    const expectedAbs = resolve(specDirAbs, mapEntry.file);
+    if (!existsSync(expectedAbs)) {
+      capabilityWarnings.push(`${mapEntry.id}: map file 不存在 ${mapEntry.file}`);
+    }
+    const featureAtMapPath = featureBySpecRel.get(normalizeMapRelPath(mapEntry.file));
+    if (featureAtMapPath && featureAtMapPath.name !== mapEntry.id) {
+      capabilityErrors.push(
+        `${mapEntry.id}: map file ${mapEntry.file} 内的 # capability 是 ${featureAtMapPath.name}`,
+      );
+    }
+    const feature = featureByName.get(mapEntry.id);
+    if (feature && normalizeMapRelPath(feature.specRel) !== normalizeMapRelPath(mapEntry.file)) {
+      capabilityErrors.push(`${mapEntry.id}: feature path 与 map file 不一致`);
+    }
+  }
+
+  const capabilityIssues = [...capabilityErrors, ...capabilityWarnings];
+  checks.push({
+    id: "capability_map.capabilities",
+    level:
+      capabilityErrors.length > 0
+        ? "fail"
+        : capabilityWarnings.length > 0
+          ? "warn"
+          : "pass",
+    message:
+      capabilityIssues.length === 0
+        ? "capability map matches capability feature files"
+        : `${capabilityIssues.length} capability map alignment issues found`,
+    detail: capabilityIssues.length === 0 ? undefined : capabilityIssues.join("; "),
+  });
+
+  const flowIssues = capabilityMap.flows
+    .filter((flow) => !existsSync(resolve(specDirAbs, flow.file)))
+    .map((flow) => `${flow.id}: map flow file 不存在 ${flow.file}`);
+  checks.push({
+    id: "capability_map.flows",
+    level: flowIssues.length === 0 ? "pass" : "warn",
+    message:
+      flowIssues.length === 0
+        ? "capability map flow files are present"
+        : `${flowIssues.length} capability map flow files are missing`,
+    detail: flowIssues.length === 0 ? undefined : flowIssues.join("; "),
+  });
+}
+
+function analyzeCapabilityBoundary(content: string): string[] {
+  const reasons: string[] = [];
+  const title = content.match(FEATURE_TITLE_RE)?.[1]?.trim() ?? "";
+  if (title && FLOW_TITLE_RE.test(title)) {
+    reasons.push("flow_like_title");
+  }
+
+  const scenarioCount = [...content.matchAll(SCENARIO_RE)].length;
+  if (scenarioCount > SCENARIO_COUNT_WARN_LIMIT) {
+    reasons.push(`scenario_count=${scenarioCount}>${SCENARIO_COUNT_WARN_LIMIT}`);
+  }
+
+  const corePromises = countSectionItems(content, "核心承诺");
+  if (corePromises > CORE_PROMISE_WARN_LIMIT) {
+    reasons.push(`core_promises=${corePromises}>${CORE_PROMISE_WARN_LIMIT}`);
+  }
+
+  const orderedSteps = [...content.matchAll(STEP_RE)].filter((match) =>
+    ORDERED_STEP_RE.test(match[1] ?? ""),
+  ).length;
+  if (orderedSteps > ORDERED_STEP_WARN_LIMIT) {
+    reasons.push(`ordered_steps=${orderedSteps}>${ORDERED_STEP_WARN_LIMIT}`);
+  }
+
+  return reasons;
+}
+
+function countSectionItems(content: string, sectionName: string): number {
+  let inSection = false;
+  let count = 0;
+  for (const line of content.split(/\r?\n/)) {
+    const heading = line.match(SECTION_HEADING_RE)?.[1] ?? null;
+    if (heading) {
+      inSection = heading === sectionName;
+      continue;
+    }
+    if (!inSection) continue;
+    if (/^\s*(?:Scenario|场景|場景|Escenario|Feature|功能|機能|Característica):/.test(line)) {
+      break;
+    }
+    const trimmed = line.trim();
+    if (/^[-*]\s+/.test(trimmed)) count += 1;
+  }
+  return count;
 }
 
 async function collectNonBusinessFeatureMeta(
@@ -399,6 +675,53 @@ async function collectFeatureFilesUnder(
       content: await readFile(abs, "utf-8"),
     });
   }
+}
+
+async function collectHarnessBddImplementationArtifacts(
+  projectRoot: string,
+  specDirAbs: string,
+): Promise<{ fileRel: string; reason: string }[]> {
+  if (!existsSync(specDirAbs)) return [];
+
+  const glob = new Glob("**/*");
+  const result: { fileRel: string; reason: string }[] = [];
+  for await (const rel of glob.scan({ cwd: specDirAbs, onlyFiles: true })) {
+    const reason = classifyHarnessBddImplementationArtifact(rel);
+    if (!reason) continue;
+    result.push({
+      fileRel: relative(projectRoot, resolve(specDirAbs, rel)),
+      reason,
+    });
+  }
+  return result.sort((a, b) => a.fileRel.localeCompare(b.fileRel));
+}
+
+function classifyHarnessBddImplementationArtifact(specRel: string): string | null {
+  const normalized = specRel.replace(/\\/g, "/");
+  const segments = normalized.split("/").filter(Boolean);
+  const lowerSegments = segments.map((segment) => segment.toLowerCase());
+  const fileName = lowerSegments.at(-1) ?? "";
+
+  if (normalized === "capability-map.yaml") {
+    return null;
+  }
+  if (lowerSegments[0] === "bdd") {
+    return "BDD runner config, reports, and step definitions must live in host project tests, not harness/bdd";
+  }
+  if (fileName.endsWith(".feature")) {
+    return null;
+  }
+  if (lowerSegments.some((segment) => BDD_STEP_DIR_SEGMENTS.has(segment))) {
+    return "BDD step definitions must live in host project tests, not harness";
+  }
+  if (BDD_RUNNER_CONFIG_FILES.has(fileName)) {
+    return "BDD runner config must live with host project tests, not harness";
+  }
+  if (BDD_STEP_CODE_FILE_RE.test(fileName)) {
+    return "BDD step definition code must live in host project tests, not harness";
+  }
+
+  return null;
 }
 
 function featureQualityPassMessage(id: string): string {

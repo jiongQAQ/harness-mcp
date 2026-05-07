@@ -12,7 +12,9 @@ export const HELP_TOPICS = [
   "overview",
   "workflow",
   "tools",
+  "map",
   "feature",
+  "bdd",
   "check",
   "flow",
 ] as const;
@@ -23,7 +25,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     group: "入门",
     description: "静态查看 harness-mcp 的工具说明、推荐工作流和中文 feature/check/flow 写法;不读取当前项目。",
     useWhen: "第一次使用、不确定下一步该调什么工具、需要查看 MCP 命令用法时。",
-    commonArgs: ["topic: 不传返回完整手册 | overview | workflow | tools | feature | check | flow | <tool_name>", "raw"],
+    commonArgs: ["topic: 不传返回完整手册 | overview | workflow | tools | map | feature | bdd | check | flow | <tool_name>", "raw"],
     example: "help({})",
     notes: [
       "help() 一次性返回完整 MCP 工具手册,包含用途、第一次使用步骤和 AI 使用方式;topic 只用于精确查看某一段。",
@@ -31,6 +33,8 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
       "help 只介绍 MCP 怎么用,不总结当前项目。",
       "了解当前项目用 context/info/doctor,验证当前项目用 verify/check/flow。",
       "harness 文件默认使用中文,示例都会带 # language: zh-CN。",
+      "Feature Contract Review 只审 feature 契约,触发于 create_spec/update_spec 或手动改 feature 后。",
+      "Step Evidence Review 只审 step 断言证据,触发于 BDD steps 改完或 verify/flow PASS 后。",
     ],
   },
   {
@@ -54,11 +58,16 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "doctor",
     group: "发现项目",
-    description: "静态自检 harness 接入:配置、目录、capability 元数据、feature 质量和 BDD 报告配置。",
+    description: "静态自检 harness 接入:配置、目录、capability 元数据、feature 质量、BDD 实现位置和报告配置。",
     useWhen: "用户不知道缺什么、或刚生成/改完 harness 文件后。",
     commonArgs: ["path", "raw"],
     example: 'doctor({ "raw": true })',
-    notes: ["业务 feature 缺 # language: zh-CN 会失败。charter/constraints/flows 缺语言头会警告。"],
+    notes: [
+      "业务 feature 缺 # language: zh-CN 会失败。charter/constraints/flows 缺语言头会警告。",
+      "业务 feature 不在 harness/features/<业务域>/ 下会提示 capabilities.layout。",
+      "业务 feature 结构过宽会提示 capabilities.boundary。",
+      "BDD step definitions、runner config 或测试代码放进 harness 会触发 harness_contract.no_bdd_implementation。",
+    ],
   },
   {
     name: "context",
@@ -76,7 +85,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     useWhen: "已经知道项目接入正常,只想轻量定位业务能力。",
     commonArgs: ["path", "tag", "prefix", "raw"],
     example: 'list_capabilities({ "tag": "billing" })',
-    notes: ["constraints、flows、_charter 不会被当作业务能力。"],
+    notes: ["constraints、flows、_charter 不会被当作业务能力。推荐业务能力放在 harness/features/<业务域>/。"],
   },
   {
     name: "search",
@@ -102,11 +111,29 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     description: "安全创建新的业务能力 .feature 文件,并做去重、路径安全、Gherkin 校验和业务契约质量门禁。",
     useWhen: "新增业务时,先把 PRD/用户需求写成业务 feature,再写测试和代码。",
     commonArgs: ["path", "capability", "file", "content", "raw"],
-    example: 'create_spec({ "capability": "billing.createOrder", "file": "billing/create-order.feature", "content": "..." })',
+    example: 'create_spec({ "capability": "billing.createOrder", "file": "features/billing/create-order.feature", "content": "..." })',
     notes: [
+      "新增 capability 前必须先用 update_map 写入 capability-map.yaml。",
+      "file 必须位于 features/<业务域>/ 下。",
+      "一个 feature 只表达一个可独立验证的业务能力；多阶段链路写到 flows。",
       "content 必须包含 # language: zh-CN。",
       "content 必须包含 # capability: <业务域>.<能力名>,且和参数一致。",
       "业务 feature 必须有 业务来源 / 意图 / 边界 / 核心承诺 / 风险 / 待确认。",
+      "创建后必须先做 Feature Contract Review,它只审 feature 契约,不审 step 实现。",
+    ],
+  },
+  {
+    name: "update_map",
+    group: "写规格",
+    description: "创建或更新 harness/capability-map.yaml,固定业务域、能力边界、feature 路径和 flow uses。",
+    useWhen: "从 PRD/需求拆分业务能力时,先提交 capability map,再 create_spec 创建具体 feature。",
+    commonArgs: ["path", "content", "raw"],
+    example: 'update_map({ "content": "version: 1\\ndomains:\\n  billing:\\n    capabilities:\\n      - id: billing.createOrder\\n        file: features/billing/create-order.feature\\n        intent: 创建订单\\n" })',
+    notes: [
+      "map 是业务划分结果,不是 BDD step definitions。",
+      "BDD step definitions 和 runner 配置属于宿主项目测试目录,不是 harness 目录。",
+      "capability file 必须位于 features/<业务域>/。",
+      "flow file 必须位于 flows/,且 uses 只能引用 map 内已声明的 capability。",
     ],
   },
   {
@@ -119,6 +146,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     notes: [
       "本工具只能改已有能力,不能新建。",
       "content 必须包含 # language: zh-CN。",
+      "更新后必须先做 Feature Contract Review,它只审 feature 契约,不审 step 实现。",
       "allow_invalid_gherkin=true 只用于临时强制写入,慎用。",
     ],
   },
@@ -132,6 +160,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     notes: [
       "默认不返回 git diff。失败后 AI 可以自行查看 diff 和测试日志。",
       "bdd.report 必须覆盖选中的 capability feature,否则视为 BDD Coverage FAIL。",
+      "verify 通过不等于 Then 语义自动正确;AI 必须输出 Step Evidence Review/Then-to-Assertion 自审表。",
     ],
   },
   {
@@ -152,7 +181,9 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     example: 'flow({ "name": "下单", "dryRun": true })',
     notes: [
       "没有 name 时只列出 flow。传 name 时执行 bdd 配置里的宿主项目 BDD runner。",
+      "flow 只管理 harness/flows 下的 .feature;step definitions 写在宿主项目测试目录。",
       "bdd.report 必须覆盖选中的 flow feature 和全部场景,否则视为 BDD Coverage FAIL。",
+      "flow 通过后触发 Step Evidence Review,检查每个 Then 的实际断言是否证明了对应业务语义。",
     ],
   },
   {

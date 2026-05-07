@@ -88,6 +88,7 @@ const expectedTools = [
   "read_spec",
   "run",
   "search",
+  "update_map",
   "update_spec",
   "verify",
 ];

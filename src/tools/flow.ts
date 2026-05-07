@@ -17,6 +17,10 @@ import {
   type BddCoverageResult,
   type BddTarget,
 } from "../bdd.ts";
+import {
+  renderNextRequiredAction,
+  STEP_EVIDENCE_REVIEW_ACTION,
+} from "../review_protocol.ts";
 
 export const FlowInputSchema = z.object({
   path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
@@ -100,6 +104,14 @@ export async function executeFlow(input: FlowInput): Promise<string> {
   const coverage = checkBddCoverage(parsed, [target]);
 
   if (input.raw) {
+    const nextRequiredAction = shouldRequireStepEvidenceReview(
+      runResult.exitCode,
+      runResult.timedOut,
+      parsed,
+      coverage,
+    )
+      ? STEP_EVIDENCE_REVIEW_ACTION
+      : null;
     return JSON.stringify(
       {
         command_type: "flow",
@@ -115,6 +127,7 @@ export async function executeFlow(input: FlowInput): Promise<string> {
         report: parsed,
         report_path: reportPathAbs,
         bdd_coverage: coverage,
+        next_required_action: nextRequiredAction,
         stdout_tail: runResult.stdout.slice(-2000),
         stderr_tail: runResult.stderr.slice(-2000),
       },
@@ -134,6 +147,15 @@ export async function executeFlow(input: FlowInput): Promise<string> {
     coverage,
     stderr: runResult.stderr,
   });
+}
+
+function shouldRequireStepEvidenceReview(
+  exitCode: number,
+  timedOut: boolean,
+  parsed: ParsedReport | null,
+  coverage: BddCoverageResult,
+): boolean {
+  return exitCode === 0 && !timedOut && coverage.ok && parsed?.summary.failed === 0;
 }
 
 async function discoverFlows(
@@ -262,6 +284,18 @@ function renderFlowRun(args: {
 
   out.push("");
   renderCoverage(args.coverage, out);
+
+  if (
+    shouldRequireStepEvidenceReview(
+      args.exitCode,
+      args.timedOut,
+      args.parsed,
+      args.coverage,
+    )
+  ) {
+    out.push("");
+    out.push(renderNextRequiredAction(STEP_EVIDENCE_REVIEW_ACTION));
+  }
 
   if (args.stderr.trim()) {
     out.push("");

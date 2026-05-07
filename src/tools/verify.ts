@@ -16,6 +16,10 @@ import {
   type BddCoverageResult,
   type BddTarget,
 } from "../bdd.ts";
+import {
+  renderNextRequiredAction,
+  STEP_EVIDENCE_REVIEW_ACTION,
+} from "../review_protocol.ts";
 
 export const VerifyInputSchema = z.object({
   path: z.string().optional(),
@@ -90,6 +94,14 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
   }
 
   if (input.raw) {
+    const nextRequiredAction = shouldRequireStepEvidenceReview(
+      runResult.exitCode,
+      runResult.timedOut,
+      parsed,
+      coverage,
+    )
+      ? STEP_EVIDENCE_REVIEW_ACTION
+      : null;
     return JSON.stringify(
       {
         cmd,
@@ -109,6 +121,7 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
         report: parsed,
         report_path: reportPathAbs,
         bdd_coverage: coverage,
+        next_required_action: nextRequiredAction,
         git_diff: input.include_diff ? gitDiff : null,
         git_diff_truncated: input.include_diff ? gitTruncated : false,
         stdout_tail: runResult.stdout.slice(-2000),
@@ -133,6 +146,15 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
     gitTruncated,
     stderr: runResult.stderr,
   });
+}
+
+function shouldRequireStepEvidenceReview(
+  exitCode: number,
+  timedOut: boolean,
+  parsed: ParsedReport | null,
+  coverage: BddCoverageResult,
+): boolean {
+  return exitCode === 0 && !timedOut && coverage.ok && parsed?.summary.failed === 0;
 }
 
 function renderVerifyRun(args: {
@@ -183,6 +205,18 @@ function renderVerifyRun(args: {
 
   out.push("");
   renderCoverage(args.coverage, out);
+
+  if (
+    shouldRequireStepEvidenceReview(
+      args.exitCode,
+      args.timedOut,
+      args.parsed,
+      args.coverage,
+    )
+  ) {
+    out.push("");
+    out.push(renderNextRequiredAction(STEP_EVIDENCE_REVIEW_ACTION));
+  }
 
   if (args.includeDiff) {
     out.push("");

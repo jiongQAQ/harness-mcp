@@ -164,6 +164,10 @@ assert(
   "verify should expand name_filter_pattern with capability name",
 );
 assert(verifyPassRaw.bdd_coverage?.ok === true, "verify should pass BDD coverage");
+assert(
+  verifyPassRaw.next_required_action === "Step Evidence Review",
+  "verify PASS should require Step Evidence Review next",
+);
 
 process.env.REPORT_SRC = wrongCapabilityReportPath;
 const verifyWrong = await executeVerify({
@@ -179,6 +183,10 @@ assert(
 assert(
   verifyWrong.includes("subject-literacy.getByUid"),
   "verify coverage failure should name selected capability",
+);
+assert(
+  !verifyWrong.includes("Next required action: Step Evidence Review"),
+  "verify coverage failure should not require Step Evidence Review as a pass action",
 );
 
 process.env.REPORT_SRC = flowReportPath;
@@ -199,6 +207,10 @@ assert(
   "flow should expand name_filter_pattern with flow title",
 );
 assert(flowPassRaw.bdd_coverage?.ok === true, "flow should pass BDD coverage");
+assert(
+  flowPassRaw.next_required_action === "Step Evidence Review",
+  "flow PASS should require Step Evidence Review next",
+);
 
 process.env.REPORT_SRC = getByUidReportPath;
 const flowWrong = await executeFlow({
@@ -212,6 +224,10 @@ assert(
   "flow should fail when report does not cover selected flow feature",
 );
 assert(flowWrong.includes("用户完成下单"), "flow coverage failure should name selected flow");
+assert(
+  !flowWrong.includes("Next required action: Step Evidence Review"),
+  "flow coverage failure should not require Step Evidence Review as a pass action",
+);
 
 await rm(tmpRoot, { recursive: true, force: true });
 

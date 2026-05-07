@@ -5,12 +5,19 @@
  */
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { mkdtemp, cp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, cp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 
 const fixtureRoot = resolve(import.meta.dir, "../examples/sel-service-yaml");
 const tmpDir = await mkdtemp(`${tmpdir()}/harness-mcp-test-`);
 await cp(fixtureRoot, tmpDir, { recursive: true });
+const targetFeaturePath = resolve(tmpDir, "harness/ai-learning/subject-literacy/getByUid.feature");
+const originalFeature = await readFile(targetFeaturePath, "utf-8");
+await writeFile(
+  targetFeaturePath,
+  originalFeature.replace(/^# capability: .+\n/m, ""),
+  "utf-8",
+);
 
 const proc = spawn("bun", ["run", "src/index.ts"], {
   cwd: resolve(import.meta.dir, ".."),
@@ -95,6 +102,15 @@ send({ jsonrpc: "2.0", id: 33, method: "tools/call",
   params: { name: "update_spec", arguments: { capability: "no-such", content: validNew } } });
 await wait(500);
 
+// Case E: 更新已有能力时不能改掉 # capability 身份
+const wrongCapability = validNew.replace(
+  "# capability: subject-literacy.getByUid",
+  "# capability: subject-literacy.other",
+);
+send({ jsonrpc: "2.0", id: 34, method: "tools/call",
+  params: { name: "update_spec", arguments: { capability: "getByUid", content: wrongCapability } } });
+await wait(500);
+
 proc.kill();
 await wait(200);
 
@@ -107,10 +123,18 @@ if (!a.includes("已更新") || !a.includes("Gherkin 校验通过")) {
   console.error("❌ FAIL: A");
   pass = false;
 }
+if (!a.includes("Next required action: Feature Contract Review")) {
+  console.error("❌ FAIL: update_spec success should require Feature Contract Review next");
+  pass = false;
+}
 
 const onDisk = await readFile(resolve(tmpDir, "harness/ai-learning/subject-literacy/getByUid.feature"), "utf-8");
 if (!onDisk.includes("(更新版)")) {
   console.error("❌ FAIL: file not actually updated");
+  pass = false;
+}
+if (!onDisk.includes("# capability: subject-literacy.getByUid")) {
+  console.error("❌ FAIL: update_spec should repair missing # capability metadata");
   pass = false;
 }
 
@@ -132,6 +156,13 @@ const d = text(33);
 console.log("=== D: not found ===\n" + d + "\n");
 if (!d.includes("未找到")) {
   console.error("❌ FAIL: D should reject not_found");
+  pass = false;
+}
+
+const e = text(34);
+console.log("=== E: capability mismatch ===\n" + e + "\n");
+if (!e.includes("# capability 不匹配")) {
+  console.error("❌ FAIL: E should reject capability mismatch");
   pass = false;
 }
 

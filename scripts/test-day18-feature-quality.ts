@@ -22,6 +22,34 @@ ai_hints: ""
 `,
   "utf-8",
 );
+await writeFile(
+  resolve(tmpRoot, "harness/capability-map.yaml"),
+  `version: 1
+domains:
+  demo:
+    capabilities:
+      - id: demo.createDraft
+        file: features/demo/create-draft.feature
+        intent: 创建草稿
+      - id: demo.missingSource
+        file: features/demo/missing-source.feature
+        intent: 缺少业务来源校验
+      - id: demo.missingPromise
+        file: features/demo/missing-promise.feature
+        intent: 缺少核心承诺校验
+      - id: demo.emptyPending
+        file: features/demo/empty-pending.feature
+        intent: 空待确认校验
+      - id: demo.noSourceKeyword
+        file: features/demo/no-source-keyword.feature
+        intent: 业务来源类型校验
+      - id: demo.missingLanguage
+        file: features/demo/missing-language.feature
+        intent: 缺少中文语言头校验
+flows: []
+`,
+  "utf-8",
+);
 
 const fullContract = (capability: string) => `# language: zh-CN
 # capability: ${capability}
@@ -159,7 +187,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.createDraft",
-      file: "demo/createDraft.feature",
+      file: "features/demo/create-draft.feature",
       content: fullContract("demo.createDraft"),
       raw: true,
     },
@@ -175,7 +203,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.missingSource",
-      file: "demo/missingSource.feature",
+      file: "features/demo/missing-source.feature",
       content: missingSource,
     },
   },
@@ -190,7 +218,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.missingPromise",
-      file: "demo/missingPromise.feature",
+      file: "features/demo/missing-promise.feature",
       content: missingPromise,
     },
   },
@@ -205,7 +233,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.emptyPending",
-      file: "demo/emptyPending.feature",
+      file: "features/demo/empty-pending.feature",
       content: emptyPending,
     },
   },
@@ -220,7 +248,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.noSourceKeyword",
-      file: "demo/noSourceKeyword.feature",
+      file: "features/demo/no-source-keyword.feature",
       content: noSourceKeyword,
     },
   },
@@ -249,7 +277,7 @@ send({
     name: "create_spec",
     arguments: {
       capability: "demo.missingLanguage",
-      file: "demo/missingLanguage.feature",
+      file: "features/demo/missing-language.feature",
       content: missingLanguage,
     },
   },
@@ -303,7 +331,7 @@ assert(text(206).includes("# language: zh-CN"), "missing language failure should
 
 const doctor = parse(207);
 console.log("=== doctor feature quality ===\n" + text(207).slice(0, 1600) + "\n");
-assert(doctor?.status === "warn", "doctor should warn for code-module-like feature path");
+assert(["warn", "fail"].includes(doctor?.status), "doctor should surface code-module-like feature path diagnostics");
 assert(
   doctor?.checks?.some((c: any) => c.id === "feature_quality.required_sections" && c.level === "pass"),
   "doctor should pass required sections for complete features",
