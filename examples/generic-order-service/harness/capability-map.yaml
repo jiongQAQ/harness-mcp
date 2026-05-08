@@ -1,0 +1,18 @@
+version: 1
+domains:
+  order:
+    capabilities:
+      - id: order.create
+        file: features/order/create.feature
+        entrypoint: OrderController#create
+        intent: 创建订单并锁定库存
+      - id: order.cancel
+        file: features/order/cancel.feature
+        entrypoint: OrderController#cancel
+        intent: 取消订单并释放库存
+flows:
+  - id: order.customerPurchase
+    file: flows/customer-purchase.feature
+    uses:
+      - order.create
+      - order.cancel

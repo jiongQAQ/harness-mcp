@@ -6,6 +6,7 @@ import { readFile, stat } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { Glob } from "bun";
 import { z } from "zod";
+import { loadCapabilityMap, normalizeMapRelPath } from "../capability_map.ts";
 import { loadConfig } from "../config.ts";
 import {
   analyzeBuiltinConstraintSteps,
@@ -16,6 +17,7 @@ import {
 import { resolveProjectRoot } from "../project.ts";
 import { runShell } from "../runner.ts";
 import { parseReport, type ParsedReport } from "../parsers/report.ts";
+import { checkFeatureQuality } from "../feature_quality.ts";
 
 export const CheckInputSchema = z.object({
   path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
@@ -23,7 +25,7 @@ export const CheckInputSchema = z.object({
   raw: z.boolean().optional().describe("true 返回 JSON,false/缺省 返回格式化文本"),
 });
 
-export type CheckInput = z.infer<typeof CheckInputSchema>;
+export type CheckInput = z.input<typeof CheckInputSchema>;
 
 export interface ConstraintSpec {
   title: string;
@@ -34,6 +36,13 @@ export interface ConstraintSpec {
   lastModified: string;
 }
 
+interface StaticCheck {
+  id: string;
+  level: "pass" | "warn" | "fail";
+  message: string;
+  detail?: string;
+}
+
 const TITLE_RE = /^\s*(?:Feature|功能|機能|Característica):\s*(.+)$/m;
 const SCENARIO_RE = /^\s*(?:Scenario|场景|場景|Escenario):\s*.+$/gm;
 
@@ -42,6 +51,12 @@ export async function executeCheck(input: CheckInput): Promise<string> {
   const loaded = await loadConfig(root);
   if (!loaded) return `No harness.yaml found at ${root}`;
 
+  const staticChecks = await collectStaticChecks(
+    loaded.projectRoot,
+    loaded.specDirAbs,
+    loaded.charterDirAbs,
+  );
+  const staticStatus = summarizeStaticStatus(staticChecks);
   const constraints = await discoverConstraints(
     loaded.projectRoot,
     loaded.specDirAbs,
@@ -58,7 +73,9 @@ export async function executeCheck(input: CheckInput): Promise<string> {
     const payload = {
       command_type: "check",
       dry_run: true,
+      status: staticStatus,
       project_root: loaded.projectRoot,
+      static_checks: staticChecks,
       constraint_count: constraints.length,
       constraints: constraints.map((constraint) => ({
         title: constraint.title,
@@ -84,11 +101,14 @@ export async function executeCheck(input: CheckInput): Promise<string> {
 
   if (!command) {
     const run = await runBuiltinConstraints(loaded.projectRoot, constraints);
+    const status = staticStatus === "fail" || run.report.summary.failed > 0 ? "fail" : staticStatus;
     if (input.raw) {
       return JSON.stringify(
         {
           command_type: "check",
           runner: "builtin",
+          status,
+          static_checks: staticChecks,
           constraint_count: constraints.length,
           exit_code: run.report.summary.failed > 0 ? 1 : 0,
           timed_out: false,
@@ -100,7 +120,7 @@ export async function executeCheck(input: CheckInput): Promise<string> {
         2,
       );
     }
-    return renderBuiltinConstraintRun(run);
+    return [renderStaticChecks(staticChecks), renderBuiltinConstraintRun(run)].join("\n\n");
   }
 
   const workdir = resolve(loaded.projectRoot, command.workdir ?? ".");
@@ -116,11 +136,14 @@ export async function executeCheck(input: CheckInput): Promise<string> {
     parsed = await parseReport(command.report.format, reportPathAbs);
   }
 
+  const commandFailed = runResult.exitCode !== 0 || runResult.timedOut || Boolean(parsed && parsed.summary.failed > 0);
   if (input.raw) {
     return JSON.stringify(
       {
         command_type: "check",
         runner: "command",
+        status: staticStatus === "fail" || commandFailed ? "fail" : staticStatus,
+        static_checks: staticChecks,
         constraint_count: constraints.length,
         cmd: command.cmd,
         workdir,
@@ -138,6 +161,7 @@ export async function executeCheck(input: CheckInput): Promise<string> {
   }
 
   return renderCheckRun({
+    staticChecks,
     cmd: command.cmd,
     workdir,
     exitCode: runResult.exitCode,
@@ -147,6 +171,218 @@ export async function executeCheck(input: CheckInput): Promise<string> {
     reportPathAbs,
     stderr: runResult.stderr,
   });
+}
+
+async function collectStaticChecks(
+  projectRoot: string,
+  specDirAbs: string,
+  charterDirAbs: string,
+): Promise<StaticCheck[]> {
+  const checks: StaticCheck[] = [];
+  const features = await collectBusinessFeatureFiles(projectRoot, specDirAbs);
+  const qualityIssues = features.flatMap((feature) =>
+    checkFeatureQuality(feature.content, feature.fileRel).issues.map((issue) => ({
+      ...issue,
+      fileRel: feature.fileRel,
+    })),
+  );
+
+  const qualityIds = [...new Set([
+    "feature_quality.language",
+    "feature_quality.entrypoint",
+    "feature_quality.required_sections",
+    "feature_quality.business_source",
+    "feature_quality.scenarios",
+    "feature_quality.rules",
+    "feature_quality.then_specificity",
+    ...qualityIssues.map((issue) => issue.id),
+  ])].sort();
+
+  for (const id of qualityIds) {
+    const issues = qualityIssues.filter((issue) => issue.id === id);
+    const level = issues.some((issue) => issue.level === "fail")
+      ? "fail"
+      : issues.length > 0
+        ? "warn"
+        : "pass";
+    checks.push({
+      id,
+      level,
+      message: issues.length === 0 ? `${id} passed` : `${issues.length} ${id} issue(s) found`,
+      detail: issues.map((issue) => `${issue.fileRel}: ${issue.message}`).join("; ") || undefined,
+    });
+  }
+
+  checks.push(...await collectFeatureLayoutChecks(projectRoot, specDirAbs));
+  checks.push(...await collectCharterFormatChecks(projectRoot, charterDirAbs));
+  checks.push(...await collectMapAlignmentChecks(projectRoot, specDirAbs, features));
+  checks.push(...await collectHarnessBddImplementationChecks(projectRoot, specDirAbs));
+  return checks;
+}
+
+async function collectBusinessFeatureFiles(
+  projectRoot: string,
+  specDirAbs: string,
+): Promise<{ fileRel: string; specRel: string; content: string }[]> {
+  const featuresDir = resolve(specDirAbs, "features");
+  if (!existsSync(featuresDir)) return [];
+  const glob = new Glob("**/*.feature");
+  const result: { fileRel: string; specRel: string; content: string }[] = [];
+  for await (const rel of glob.scan({ cwd: featuresDir, onlyFiles: true })) {
+    const abs = resolve(featuresDir, rel);
+    result.push({
+      fileRel: relative(projectRoot, abs),
+      specRel: `features/${rel}`.replace(/\\/g, "/"),
+      content: await readFile(abs, "utf-8"),
+    });
+  }
+  return result;
+}
+
+async function collectFeatureLayoutChecks(
+  projectRoot: string,
+  specDirAbs: string,
+): Promise<StaticCheck[]> {
+  if (!existsSync(specDirAbs)) return [];
+  const glob = new Glob("**/*.feature");
+  const issues: string[] = [];
+  for await (const rel of glob.scan({ cwd: specDirAbs, onlyFiles: true })) {
+    const normalized = rel.replace(/\\/g, "/");
+    const [top] = normalized.split("/");
+    if (!top || top === "features" || top === "flows" || top === "constraints" || top.startsWith("_")) {
+      continue;
+    }
+    issues.push(relative(projectRoot, resolve(specDirAbs, rel)));
+  }
+
+  return [{
+    id: "feature_layout.business_features_under_features",
+    level: issues.length === 0 ? "pass" : "fail",
+    message: issues.length === 0 ? "business feature layout passed" : `${issues.length} feature file(s) found outside features/flows/constraints/_charter`,
+    detail: issues.join("; ") || undefined,
+  }];
+}
+
+async function collectCharterFormatChecks(
+  projectRoot: string,
+  charterDirAbs: string,
+): Promise<StaticCheck[]> {
+  if (!existsSync(charterDirAbs)) {
+    return [{
+      id: "charter_format.markdown",
+      level: "pass",
+      message: "charter markdown layout passed",
+    }];
+  }
+
+  const glob = new Glob("**/*.feature");
+  const issues: string[] = [];
+  for await (const rel of glob.scan({ cwd: charterDirAbs, onlyFiles: true })) {
+    issues.push(relative(projectRoot, resolve(charterDirAbs, rel)));
+  }
+
+  return [{
+    id: "charter_format.markdown",
+    level: issues.length === 0 ? "pass" : "fail",
+    message: issues.length === 0
+      ? "charter markdown layout passed"
+      : `${issues.length} charter file(s) must be Markdown, not .feature`,
+    detail: issues.join("; ") || undefined,
+  }];
+}
+
+async function collectMapAlignmentChecks(
+  projectRoot: string,
+  specDirAbs: string,
+  features: { fileRel: string; specRel: string; content: string }[],
+): Promise<StaticCheck[]> {
+  const map = await loadCapabilityMap(specDirAbs);
+  if (!map.exists) {
+    return [{ id: "capability_map.exists", level: "warn", message: "capability-map.yaml is missing" }];
+  }
+  if (!map.ok) {
+    return [{ id: "capability_map.valid", level: "fail", message: "capability-map.yaml is invalid", detail: map.error }];
+  }
+
+  const issues: string[] = [];
+  const featureBySpecRel = new Set(features.map((feature) => normalizeMapRelPath(feature.specRel)));
+  for (const entry of map.capabilities) {
+    if (!featureBySpecRel.has(normalizeMapRelPath(entry.file))) {
+      issues.push(`${entry.id}: map file 不存在 ${entry.file}`);
+    }
+  }
+  for (const feature of features) {
+    const capability = feature.content.match(/^#\s*capability:\s*(.+)\s*$/m)?.[1]?.trim();
+    if (!capability) {
+      issues.push(`${feature.fileRel}: 缺少 # capability`);
+      continue;
+    }
+    const entry = map.capabilities.find((item) => item.id === capability);
+    if (!entry) {
+      issues.push(`${feature.fileRel}: 未在 capability-map.yaml 中声明`);
+    } else if (normalizeMapRelPath(entry.file) !== normalizeMapRelPath(feature.specRel)) {
+      issues.push(`${feature.fileRel}: map file=${entry.file}, actual=${feature.specRel}`);
+    }
+  }
+
+  const flowDir = resolve(specDirAbs, "flows");
+  for (const flow of map.flows) {
+    if (!existsSync(resolve(specDirAbs, flow.file))) {
+      issues.push(`${flow.id}: flow file 不存在 ${flow.file}`);
+    }
+  }
+  if (existsSync(flowDir)) {
+    const glob = new Glob("**/*.feature");
+    const mapFlowFiles = new Set(map.flows.map((flow) => normalizeMapRelPath(flow.file)));
+    for await (const rel of glob.scan({ cwd: flowDir, onlyFiles: true })) {
+      const specRel = `flows/${rel}`.replace(/\\/g, "/");
+      if (!mapFlowFiles.has(normalizeMapRelPath(specRel))) {
+        issues.push(`${relative(projectRoot, resolve(flowDir, rel))}: flow 未在 capability-map.yaml 中声明`);
+      }
+    }
+  }
+
+  return [{
+    id: "capability_map.alignment",
+    level: issues.length === 0 ? "pass" : "fail",
+    message: issues.length === 0 ? "capability map aligns with features and flows" : `${issues.length} capability map alignment issue(s) found`,
+    detail: issues.join("; ") || undefined,
+  }];
+}
+
+async function collectHarnessBddImplementationChecks(
+  projectRoot: string,
+  specDirAbs: string,
+): Promise<StaticCheck[]> {
+  if (!existsSync(specDirAbs)) return [];
+  const glob = new Glob("**/*");
+  const issues: string[] = [];
+  for await (const rel of glob.scan({ cwd: specDirAbs, onlyFiles: true })) {
+    const normalized = rel.replace(/\\/g, "/").toLowerCase();
+    const parts = normalized.split("/");
+    const fileName = parts.at(-1) ?? "";
+    if (fileName.endsWith(".feature") || normalized === "capability-map.yaml") continue;
+    if (
+      parts[0] === "bdd" ||
+      parts.includes("steps") ||
+      parts.includes("step-definitions") ||
+      ["cucumber.js", "cucumber.cjs", "cucumber.mjs", "behave.ini", "pytest.ini"].includes(fileName)
+    ) {
+      issues.push(relative(projectRoot, resolve(specDirAbs, rel)));
+    }
+  }
+  return [{
+    id: "harness_contract.no_bdd_implementation",
+    level: issues.length === 0 ? "pass" : "fail",
+    message: issues.length === 0 ? "harness contains contract files only" : `${issues.length} BDD implementation artifact(s) found under harness`,
+    detail: issues.join("; ") || undefined,
+  }];
+}
+
+function summarizeStaticStatus(checks: StaticCheck[]): "pass" | "warn" | "fail" {
+  if (checks.some((check) => check.level === "fail")) return "fail";
+  if (checks.some((check) => check.level === "warn")) return "warn";
+  return "pass";
 }
 
 export async function discoverConstraints(
@@ -203,6 +439,7 @@ export function getConstraintDiscoveryWarnings(
 
 function renderDryRun(payload: {
   project_root: string;
+  static_checks?: StaticCheck[];
   constraint_count: number;
   constraints: { title: string; file: string; scenario_count: number }[];
   cmd: string | null;
@@ -212,6 +449,8 @@ function renderDryRun(payload: {
   unsupported_steps?: { featureFile: string; step: string }[];
 }): string {
   const lines = [
+    renderStaticChecks(payload.static_checks ?? []),
+    "",
     `Constraints: ${payload.constraint_count}`,
     `project: ${payload.project_root}`,
     "",
@@ -263,6 +502,7 @@ function renderDryRun(payload: {
 }
 
 function renderCheckRun(args: {
+  staticChecks: StaticCheck[];
   cmd: string;
   workdir: string;
   exitCode: number;
@@ -273,6 +513,8 @@ function renderCheckRun(args: {
   stderr: string;
 }): string {
   const out: string[] = [];
+  out.push(renderStaticChecks(args.staticChecks));
+  out.push("");
   out.push(`$ ${args.cmd}`);
   out.push(`  cwd: ${args.workdir}`);
   out.push(
@@ -310,4 +552,14 @@ function renderCheckRun(args: {
   }
 
   return out.join("\n");
+}
+
+function renderStaticChecks(checks: StaticCheck[]): string {
+  const status = summarizeStaticStatus(checks);
+  const lines = [`Static checks: ${status.toUpperCase()}`];
+  for (const check of checks.filter((item) => item.level !== "pass")) {
+    lines.push(`  ${check.level.toUpperCase()} ${check.id}: ${check.message}`);
+    if (check.detail) lines.push(`    ${check.detail}`);
+  }
+  return lines.join("\n");
 }

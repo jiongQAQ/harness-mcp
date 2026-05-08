@@ -77,11 +77,19 @@ const toolNames =
 
 const expectedTools = [
   "check",
+  "contract",
   "context",
+  "discover",
+  "help",
+  "lint",
+  "read",
+  "verify",
+];
+
+const removedTools = [
   "create_spec",
   "doctor",
   "flow",
-  "help",
   "info",
   "list_capabilities",
   "ls",
@@ -90,7 +98,6 @@ const expectedTools = [
   "search",
   "update_map",
   "update_spec",
-  "verify",
 ];
 
 if (toolNames.includes("ping")) {
@@ -110,9 +117,11 @@ for (const name of expectedTools) {
   }
 }
 
-if (toolNames.includes("create_capability")) {
-  console.log("\n❌ FAIL: create_capability should not be registered");
-  process.exit(1);
+for (const name of removedTools) {
+  if (toolNames.includes(name)) {
+    console.log(`\n❌ FAIL: legacy tool ${name} should not be registered`);
+    process.exit(1);
+  }
 }
 
 console.log("\n✅ PASS: practical tool set is registered and help is callable");

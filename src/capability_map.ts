@@ -10,6 +10,7 @@ import { z } from "zod";
 const CapabilityEntrySchema = z.object({
   id: z.string().min(1),
   file: z.string().min(1),
+  entrypoint: z.string().min(1),
   intent: z.string().min(1),
 }).strict();
 
@@ -36,6 +37,7 @@ export interface CapabilityMapCapability {
   domain: string;
   id: string;
   file: string;
+  entrypoint: string;
   intent: string;
 }
 

@@ -1,0 +1,20 @@
+version: 1
+spec_dir: harness
+charter_dir: harness/_charter
+
+bdd:
+  runner: custom
+  cmd: "npm run test:bdd"
+  workdir: "."
+  feature_arg_pattern: '"{feature}"'
+  name_filter_pattern: '--name "{name}"'
+  report:
+    format: cucumber-json
+    path: reports/cucumber.json
+  timeout_ms: 300000
+
+commands:
+  lint:
+    cmd: "npm run lint && npm run typecheck"
+    workdir: "."
+    timeout_ms: 300000

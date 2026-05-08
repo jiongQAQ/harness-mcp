@@ -1,5 +1,5 @@
 /**
- * F3 context — 项目宪法全文 + 能力索引(AI 入口工具)
+ * context — 项目章程全文 + 能力索引(AI 入口工具)
  */
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -139,25 +139,28 @@ export async function executeContext(input: ContextInput): Promise<string> {
   // 引导
   lines.push("");
   lines.push("── How to use ──");
-  lines.push("  • 新增业务: 用户提供 PRD/需求 → update_map → create_spec → Feature Contract Review → 写测试红 → 写代码 → verify 绿");
-  lines.push("  • 业务改动: read_spec → update_spec → Feature Contract Review → 改测试红 → 改代码 → verify 绿");
-  lines.push("  • 纯重构: feature 不变 → verify/check 保证行为不变");
+  lines.push("  • 新增业务/已有代码补契约: PRD/入口方法 → discover → 人工确认 → contract → Feature Contract Review → 写测试和实现 → verify → Step Evidence Review → lint → check");
+  lines.push("  • 纯重构: feature 不变 → verify/lint/check 保证行为和代码质量");
   lines.push("  • 目录约定: harness.yaml 使用 spec_dir: harness,不要创建 harness/specs");
+  lines.push("  • 全局章程放在 harness/_charter/*.md,用于架构、命名、模块边界和编码约定");
   lines.push("  • 业务 feature 放在 harness/features/<业务域>/<能力>.feature");
-  lines.push("  • 新建业务 feature 前先 update_map,让 capability-map.yaml 固定 id/file/intent");
+  lines.push("  • 新建业务 feature 前先 discover,让 AI 输出业务入口、调用链、业务规则、例子、待确认问题和证据来源");
+  lines.push("  • capability-map.yaml 固定 id/file/entrypoint/intent");
   lines.push("  • 一个业务 feature 只承诺一个可独立验证的业务结果;多阶段编排写 flows");
-  lines.push("  • create_spec/update_spec 后先做 Feature Contract Review,再写 BDD steps");
+  lines.push("  • feature 必须有 # entrypoint,并使用 Rule/规则 分组");
+  lines.push("  • contract 后先做 Feature Contract Review,再写 BDD steps");
   lines.push("  • Feature Contract Review 只审 feature 契约,不审 step 实现");
-  lines.push("  • Feature 自审触发: create_spec/update_spec 写入 feature 后,或手动修改 harness .feature 后");
-  lines.push("  • verify/flow PASS 不触发 Feature Contract Review");
+  lines.push("  • verify PASS 不触发 Feature Contract Review");
   lines.push("  • BDD step definitions 和 runner 配置写在宿主项目测试目录,不要写进 harness/");
   lines.push("  • Step Evidence Review 只审 step 断言证据,不审 feature 划分");
-  lines.push("  • Step 自审触发: BDD steps 写完/修改后,或 verify/flow PASS 后宣称 BDD 有效前");
+  lines.push("  • Step 自审触发: BDD steps 写完/修改后,或 verify PASS 后宣称 BDD 有效前");
   lines.push("  • Step Evidence Review 也叫 Then-to-Assertion 自审");
   lines.push("  • Then 写 UI 展示时必须有浏览器/DOM/视觉断言,API 断言不能证明 UI 展示");
+  lines.push("  • lint() 用于强制检查 AI 新增代码坏味道和宿主项目 lint 命令");
   lines.push("  • harness .feature 默认中文,新建/修改时必须包含 # language: zh-CN");
-  lines.push("  • feature 必须包含: 业务来源 / 意图 / 边界 / 核心承诺 / 风险 / 待确认");
-  lines.push("  • check() 用于拦截本次 AI 新增低质量改动");
+  lines.push("  • feature 必须包含: 业务来源 / 意图 / 边界 / 待确认");
+  lines.push("  • 禁止空泛 Then: 应返回成功 / 应返回完整内容 / 接口调用成功 / 状态码 200");
+  lines.push("  • check() 用于拦截 harness 契约质量和治理问题");
 
   return lines.join("\n");
 }
@@ -167,7 +170,7 @@ async function readCharter(
   projectRoot: string,
 ): Promise<CharterFile[]> {
   if (!existsSync(charterDirAbs)) return [];
-  const glob = new Glob("**/*.feature");
+  const glob = new Glob("**/*.md");
   const files: CharterFile[] = [];
   for await (const rel of glob.scan({ cwd: charterDirAbs, onlyFiles: true })) {
     const abs = `${charterDirAbs}/${rel}`;

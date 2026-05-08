@@ -28,6 +28,7 @@ export interface BddCoverageResult {
     ok: boolean;
     matched_by?: "file" | "title";
     missing_scenarios: string[];
+    non_passed_scenarios: string[];
   }[];
 }
 
@@ -115,27 +116,33 @@ export function checkBddCoverage(
         file: target.fileRel,
         ok: false,
         missing_scenarios: target.scenarioNames,
+        non_passed_scenarios: [],
       })),
     };
   }
 
   const targetResults = targets.map((target) => {
     const matched = findMatchingFeature(parsed, target);
-    const reportedScenarios = new Set(
-      (matched?.feature.scenarios ?? []).map((scenario) =>
+    const scenarioStatuses = new Map(
+      (matched?.feature.scenarios ?? []).map((scenario) => [
         normalizeName(scenario.scenario),
-      ),
+        scenario.status,
+      ]),
     );
     const missingScenarios = target.scenarioNames.filter(
-      (scenario) => !reportedScenarios.has(normalizeName(scenario)),
+      (scenario) => !scenarioStatuses.has(normalizeName(scenario)),
+    );
+    const nonPassedScenarios = target.scenarioNames.filter(
+      (scenario) => scenarioStatuses.get(normalizeName(scenario)) !== "passed",
     );
     return {
       name: target.name,
       title: target.title,
       file: target.fileRel,
-      ok: Boolean(matched) && missingScenarios.length === 0,
+      ok: Boolean(matched) && missingScenarios.length === 0 && nonPassedScenarios.length === 0,
       matched_by: matched?.matchedBy,
       missing_scenarios: missingScenarios,
+      non_passed_scenarios: nonPassedScenarios,
     };
   });
 

@@ -31,6 +31,11 @@ export function validateGherkin(content: string): GherkinValidationResult {
     if (feature) {
       for (const child of feature.children) {
         if (child.scenario) scenarioCount++;
+        if (child.rule) {
+          for (const ruleChild of child.rule.children) {
+            if (ruleChild.scenario) scenarioCount++;
+          }
+        }
       }
     }
     return {

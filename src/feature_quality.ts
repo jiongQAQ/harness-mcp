@@ -23,16 +23,19 @@ const REQUIRED_SECTIONS = [
   "业务来源",
   "意图",
   "边界",
-  "核心承诺",
-  "风险",
   "待确认",
 ] as const;
 
 const SECTION_RE = /^\s*(业务来源|意图|边界|核心承诺|风险|待确认)\s*[：:]\s*$/;
 const SCENARIO_RE = /^\s*(?:Scenario|场景|場景|Escenario):\s*.+$/gm;
+const RULE_RE = /^\s*(?:Rule|规则|規則):\s*.+$/gm;
+const ENTRYPOINT_RE = /^#\s*entrypoint:\s*(.+)\s*$/m;
+const THEN_RE = /^\s*(?:Then|And|But|那么|而且|并且|但是)\s+(.+)$/gm;
 const SOURCE_KEYWORDS = ["PRD", "用户提供", "人工确认", "代码推断", "现有测试"];
 const CODE_MODULE_SEGMENT_RE = /\b[A-Z][A-Za-z0-9]*(?:Controller|Service|Handler|Impl)\b/;
 const ZH_CN_LANGUAGE_RE = /^\s*#\s*language:\s*zh-CN\s*$/m;
+const GENERIC_THEN_RE =
+  /(?:应|应该)?(?:返回|响应|请求|接口|调用).{0,8}(?:成功|完整内容|完整的.*内容|200|ok)|状态码.{0,4}200/i;
 
 export function hasZhCnLanguageHeader(content: string): boolean {
   return ZH_CN_LANGUAGE_RE.test(content);
@@ -50,6 +53,15 @@ export function checkFeatureQuality(
       id: "feature_quality.language",
       level: "fail",
       message: "harness feature 默认使用中文,请在文件头加入 # language: zh-CN",
+      detail: fileRel || undefined,
+    });
+  }
+
+  if (!content.match(ENTRYPOINT_RE)?.[1]?.trim()) {
+    issues.push({
+      id: "feature_quality.entrypoint",
+      level: "fail",
+      message: "缺少 # entrypoint: <业务入口方法或 planned:业务入口>",
       detail: fileRel || undefined,
     });
   }
@@ -81,6 +93,27 @@ export function checkFeatureQuality(
       id: "feature_quality.scenarios",
       level: "fail",
       message: "feature 至少需要一个场景作为关键验证示例",
+      detail: fileRel || undefined,
+    });
+  }
+
+  if (![...content.matchAll(RULE_RE)].length) {
+    issues.push({
+      id: "feature_quality.rules",
+      level: "fail",
+      message: "缺少 Rule/规则 分组;请先写业务规则,再写场景例子",
+      detail: fileRel || undefined,
+    });
+  }
+
+  const genericThen = [...content.matchAll(THEN_RE)]
+    .map((match) => match[1]?.trim() ?? "")
+    .filter((step) => GENERIC_THEN_RE.test(step));
+  if (genericThen.length > 0) {
+    issues.push({
+      id: "feature_quality.then_specificity",
+      level: "fail",
+      message: `Then 过于空泛: ${genericThen.join("; ")}`,
       detail: fileRel || undefined,
     });
   }

@@ -39,6 +39,7 @@ const BddSchema = z.object({
 const CommandsSchema = z.object({
   run: CommandSchema.optional(),
   check: CommandSchema.optional(),
+  lint: CommandSchema.optional(),
 }).strict();
 
 export const ConfigSchema = z.object({
