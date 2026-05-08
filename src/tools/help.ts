@@ -13,7 +13,7 @@ export const HelpInputSchema = z.object({
   topic: z
     .string()
     .optional()
-    .describe("指南主题: overview/workflow/tools/discover/contract/harness-yaml/capability-map/feature/bdd/lint/check 或工具名"),
+    .describe("指南主题: overview/workflow/tools/discover/contract/harness-yaml/capability-map/feature/bdd/lint/agent-skills/check 或工具名"),
   raw: z.boolean().optional().describe("true 返回 JSON,false/缺省 返回格式化文本"),
 });
 
@@ -33,6 +33,7 @@ export async function executeHelp(input: HelpInput): Promise<string> {
   if (topic === "capability-map") return renderCapabilityMapGuide();
   if (topic === "bdd") return renderBddGuide();
   if (topic === "lint") return renderLintGuide();
+  if (topic === "agent-skills") return renderAgentSkillsGuide();
   if (topic === "check") return renderCheckGuide();
   const tool = findToolHelp(topic);
   if (tool) return renderToolHelp(tool);
@@ -200,6 +201,23 @@ function renderLintGuide(): string {
     "    lint:",
     "      cmd: \"npm run lint && npm run typecheck\"",
     "      workdir: \".\"",
+  ].join("\n");
+}
+
+function renderAgentSkillsGuide(): string {
+  return [
+    "agent-skills: 项目公共 Agent Skill 存储区",
+    "",
+    "约定位置:",
+    "  harness/agent-skills/<skill-name>/SKILL.md",
+    "",
+    "边界:",
+    "  - 这里只是项目内公共 skill 的保存位置",
+    "  - MCP 只在 project_context 中列出索引",
+    "  - MCP 不自动加载 skill",
+    "  - MCP 不自动安装到 .claude、.codex 或其他客户端目录",
+    "  - MCP 不校验 skill 内容格式",
+    "  - 是否使用、怎么同步到客户端目录,由用户和团队自己决定",
   ].join("\n");
 }
 

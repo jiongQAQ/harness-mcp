@@ -31,7 +31,7 @@
 project_context -> discover -> 人工确认 -> contract -> Feature Contract Review -> 写 tests/steps 与实现 -> verify -> Step Evidence Review -> lint -> check
 ```
 
-格式不确定时先查 `guide`，常用主题包括 `harness-yaml`、`capability-map`、`contract`、`bdd`、`lint` 和 `check`。
+格式不确定时先查 `guide`，常用主题包括 `harness-yaml`、`capability-map`、`contract`、`bdd`、`lint`、`agent-skills` 和 `check`。
 
 ## 项目结构
 
@@ -53,6 +53,9 @@ your-project/
     │   └── <journey>.feature
     ├── lint/
     │   └── rules.yaml
+    ├── agent-skills/
+    │   └── <skill-name>/
+    │       └── SKILL.md
     └── constraints/
         └── <rule>.feature
 ```
@@ -323,6 +326,24 @@ commands:
     workdir: "."
     timeout_ms: 600000
 ```
+
+## 项目公共 Agent Skills
+
+`harness/agent-skills/` 是项目内公共 Agent Skill 的保存位置：
+
+```text
+harness/
+└── agent-skills/
+    └── <skill-name>/
+        └── SKILL.md
+```
+
+MCP 只做索引，不负责加载、安装或校验 skill 内容。
+
+- `project_context` 会列出 `harness/agent-skills/*/SKILL.md`。
+- 如果 `SKILL.md` frontmatter 里有 `description`，索引会显示它。
+- MCP 不会自动把 skill 加入 `.claude/skills`、`.codex/skills` 或其他客户端目录。
+- 是否使用、怎么同步到客户端目录，由用户和团队自己决定。
 
 `check` 用来做治理检查：
 

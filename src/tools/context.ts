@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { relative } from "node:path";
 import { Glob } from "bun";
 import { z } from "zod";
+import { discoverAgentSkills } from "../agent_skills.ts";
 import { loadCapabilityMap } from "../capability_map.ts";
 import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import { discoverCapabilities } from "../capability.ts";
@@ -38,6 +39,7 @@ export async function executeContext(input: ContextInput): Promise<string> {
   }
 
   const charter = await readCharter(loaded.charterDirAbs, loaded.projectRoot);
+  const agentSkills = await discoverAgentSkills(loaded.projectRoot, loaded.specDirAbs);
   const caps = await discoverCapabilities(
     loaded.projectRoot,
     loaded.specDirAbs,
@@ -59,6 +61,7 @@ export async function executeContext(input: ContextInput): Promise<string> {
                 }
               : { error: capabilityMap.error },
         charter: charter.map((c) => ({ file: c.fileRel, content: c.content })),
+        agent_skills: agentSkills,
         capabilities: caps.map((c) => ({
           name: c.name,
           file: c.fileRel,
@@ -92,6 +95,17 @@ export async function executeContext(input: ContextInput): Promise<string> {
     }
   }
   lines.push("");
+
+  // Agent skills
+  if (agentSkills.length > 0) {
+    lines.push(`── Agent Skills (${agentSkills.length}) ──`);
+    for (const skill of agentSkills) {
+      lines.push(`  • ${skill.name}`);
+      if (skill.description) lines.push(`      ${skill.description}`);
+      lines.push(`      → ${skill.file}`);
+    }
+    lines.push("");
+  }
 
   // Capability map
   if (!capabilityMap.exists) {
@@ -160,6 +174,7 @@ export async function executeContext(input: ContextInput): Promise<string> {
   lines.push("  • Then 写 UI 展示时必须有浏览器/DOM/视觉断言,API 断言不能证明 UI 展示");
   lines.push("  • lint() 用于执行 harness/lint/rules.yaml 自定义禁用规则和宿主项目 lint 命令");
   lines.push("  • harness/lint/rules.yaml 是行级正则禁用规则;跨行语义检查应接入 commands.lint");
+  lines.push("  • 项目公共 Agent Skills 可保存在 harness/agent-skills/<skill-name>/SKILL.md;MCP 只列索引,不自动加载或安装");
   lines.push("  • harness .feature 默认中文,新建/修改时必须包含 # language: zh-CN");
   lines.push("  • feature 必须包含: 业务来源 / 意图 / 边界 / 待确认");
   lines.push("  • 禁止空泛 Then: 应返回成功 / 应返回完整内容 / 接口调用成功 / 状态码 200");

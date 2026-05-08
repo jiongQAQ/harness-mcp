@@ -19,6 +19,7 @@ export const HELP_TOPICS = [
   "feature",
   "bdd",
   "lint",
+  "agent-skills",
   "check",
 ] as const;
 
