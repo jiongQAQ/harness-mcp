@@ -16,20 +16,22 @@
 
 | 工具 | 作用 |
 |---|---|
-| `help` | 查看推荐工作流、目录约定和自审要求 |
-| `context` | 读取项目章程、能力索引和 AI 提示 |
+| `guide` | 查看推荐工作流、目录约定和自审要求；不读取项目 |
+| `project_context` | 读取项目章程、能力索引和 AI 提示 |
 | `discover` | 把 PRD/代码阅读结果整理成业务发现包，不写文件 |
 | `contract` | 校验并写入 `capability-map.yaml` 和 `.feature` 契约 |
-| `read` | 列出、读取或搜索业务契约 |
+| `read_contract` | 列出、读取或搜索业务契约 |
 | `verify` | 按 `bdd` 配置运行 capability/flow，并校验报告覆盖 |
-| `lint` | 强制检查 AI 新增代码坏味道，并执行宿主项目 lint 命令 |
+| `lint` | 执行 `harness/lint/rules.yaml` 和宿主项目 lint 命令 |
 | `check` | 执行治理检查和内置静态检查 |
 
 推荐流程：
 
 ```text
-context -> discover -> 人工确认 -> contract -> Feature Contract Review -> 写 tests/steps 与实现 -> verify -> Step Evidence Review -> lint -> check
+project_context -> discover -> 人工确认 -> contract -> Feature Contract Review -> 写 tests/steps 与实现 -> verify -> Step Evidence Review -> lint -> check
 ```
+
+格式不确定时先查 `guide`，常用主题包括 `harness-yaml`、`capability-map`、`contract`、`bdd`、`lint` 和 `check`。
 
 ## 项目结构
 
@@ -49,6 +51,8 @@ your-project/
     │       └── <capability>.feature
     ├── flows/
     │   └── <journey>.feature
+    ├── lint/
+    │   └── rules.yaml
     └── constraints/
         └── <rule>.feature
 ```
@@ -195,25 +199,39 @@ Feature Contract Review 只审业务契约：
 
 Step definitions 写在宿主项目自己的测试目录里，不写在 `harness/` 里。
 
-示例：
+推荐使用语言无关的职责目录：
 
 ```text
 your-project/
 ├── harness/
 │   └── features/order/create.feature
-└── src/test/
-    └── java/.../steps/OrderCreateSteps.java
+└── tests-or-src-test/
+    └── contract/
+        └── bdd/
+            ├── runner/
+            ├── config/
+            ├── steps/
+            │   └── order/
+            ├── support/
+            └── reports/
 ```
 
-或者：
+不同技术栈只做路径映射，不改变职责分层：
 
 ```text
-your-project/
-├── harness/
-│   └── features/order/create.feature
-└── tests/
-    └── bdd/steps/order-create.steps.ts
+Java:   src/test/java/<base>/contract/bdd/{runner,config,steps,support}
+Node:   tests/contract/bdd/{runner,config,steps,support}
+Python: tests/contract/bdd/{runner,config,steps,support}
+Go:     test/contract/bdd/{runner,config,steps,support}
 ```
+
+AI 生成 BDD 测试时必须遵守：
+
+- `runner/` 是测试套件入口，默认一个 suite 一个 runner，不按 feature 复制。
+- `config/` 只放测试环境配置。
+- `steps/` 必须按业务域再分一层，例如 `steps/order/`。
+- `support/` 放 API client、fixture、factory、cleaner、helper、公共断言。
+- 不要把 `*Steps`、`*RunnerTest`、`*Config` 平铺在 `bdd/` 根目录。
 
 Cucumber 根据步骤文本匹配 step definitions。Feature 中的：
 
@@ -273,16 +291,20 @@ verify({ "target_type": "flow", "target": "order.customerPurchase" })
 - `lint` 管宿主项目代码质量。
 - `check` 管 harness 契约质量、map 对齐和 constraints。
 
-默认 `lint` 扫描本次新增/修改的源码行，内置拦截：
+`lint` 不内置代码风格规则。默认只执行项目显式配置的 `harness/lint/rules.yaml` 和 `commands.lint`。
 
-- `console.log/debug/dir/trace`
-- `debugger`
-- `@ts-ignore`
-- `eslint-disable`
-- 空 `catch`
-- `System.out/System.err` 调试输出
+项目可以在 `harness/lint/rules.yaml` 里追加自定义禁用规则。默认不生成任何自定义规则；只有项目明确约定后才添加。`pattern` 是行级 JavaScript 正则，命中即失败：
 
-项目应在 `harness.yaml` 里配置自己的 lint 命令：
+```yaml
+version: 1
+rules:
+  - id: <rule-id>
+    pattern: "<line-level JavaScript regex>"
+    message: "<命中时的错误说明>"
+    fix: "<建议修正方式>"
+```
+
+`harness/lint/rules.yaml` 适合拦“不要出现这类代码”的简单规则。需要跨行语义分析时，用项目自己的 lint/checkstyle/PMD/ArchUnit/ESLint 规则，并接入 `commands.lint`：
 
 ```yaml
 commands:

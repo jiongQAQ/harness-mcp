@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { CAPABILITY_MAP_SCHEMA_HELP } from "../capability_map.ts";
+import { HARNESS_CONFIG_SCHEMA_HELP } from "../config.ts";
+import { LINT_RULES_SCHEMA_HELP } from "../lint_rules.ts";
 import {
   findToolHelp,
   HELP_TOPICS,
@@ -10,7 +13,7 @@ export const HelpInputSchema = z.object({
   topic: z
     .string()
     .optional()
-    .describe("帮助主题: overview/workflow/tools/discover/contract/feature/bdd/lint/check 或工具名"),
+    .describe("指南主题: overview/workflow/tools/discover/contract/harness-yaml/capability-map/feature/bdd/lint/check 或工具名"),
   raw: z.boolean().optional().describe("true 返回 JSON,false/缺省 返回格式化文本"),
 });
 
@@ -26,17 +29,19 @@ export async function executeHelp(input: HelpInput): Promise<string> {
   if (topic === "tools") return renderTools();
   if (topic === "discover") return renderDiscoverGuide();
   if (topic === "contract" || topic === "feature") return renderContractGuide();
+  if (topic === "harness-yaml") return renderHarnessYamlGuide();
+  if (topic === "capability-map") return renderCapabilityMapGuide();
   if (topic === "bdd") return renderBddGuide();
   if (topic === "lint") return renderLintGuide();
   if (topic === "check") return renderCheckGuide();
   const tool = findToolHelp(topic);
   if (tool) return renderToolHelp(tool);
-  return `未知 help topic: ${topic}\n可用 topic: ${allTopics().join(", ")}`;
+  return `未知 guide topic: ${topic}\n可用 topic: ${allTopics().join(", ")}`;
 }
 
 function renderOverview(): string {
   return [
-    "harness-mcp help",
+    "harness-mcp guide",
     "",
     "harness-mcp 是业务发现驱动的 BDD 契约层。它不替代 Cucumber/behave/godog,只负责引导 AI 先发现业务规则,再写可执行业务契约,最后校验 BDD report 是否真的覆盖目标 feature。",
     "",
@@ -67,7 +72,7 @@ function renderWorkflow(): string {
     "  discover 负责防止 AI 只写接口成功。",
     "  contract 负责防止 Rule-less feature 和空泛 Then 落盘。",
     "  verify 负责证明本次 BDD report 覆盖目标 feature 且全部场景 passed。",
-    "  lint 负责强制检查 AI 新增代码坏味道和宿主项目 lint 命令。",
+    "  lint 负责执行 harness/lint/rules.yaml 自定义禁用规则和宿主项目 lint 命令。",
     "  Step Evidence Review 负责证明每个 Then 被同等级断言验证。",
   ].join("\n");
 }
@@ -94,7 +99,11 @@ function renderContractGuide(): string {
   return [
     "contract: 业务契约",
     "",
-    "contract 写入 capability-map.yaml 和 .feature。feature 必须是 Rule-first:",
+    "contract 写入 capability-map.yaml 和 .feature。capability-map.yaml 必须使用 domains.<domain>.capabilities[] 结构:",
+    "",
+    CAPABILITY_MAP_SCHEMA_HELP,
+    "",
+    "feature 必须是 Rule-first:",
     "",
     "```gherkin",
     "# language: zh-CN",
@@ -128,11 +137,38 @@ function renderContractGuide(): string {
   ].join("\n");
 }
 
+function renderHarnessYamlGuide(): string {
+  return [
+    "harness.yaml: 项目接入配置",
+    "",
+    "harness.yaml 放在宿主项目根目录,用于声明 harness 目录、BDD runner、项目 lint 命令和可选 AI 提示。",
+    "",
+    HARNESS_CONFIG_SCHEMA_HELP,
+  ].join("\n");
+}
+
+function renderCapabilityMapGuide(): string {
+  return [
+    "capability-map.yaml: 能力地图 schema",
+    "",
+    "capability-map.yaml 用来固定业务能力边界,避免不同模型随意拆分 capability。",
+    "",
+    CAPABILITY_MAP_SCHEMA_HELP,
+  ].join("\n");
+}
+
 function renderBddGuide(): string {
   return [
     "BDD 验证与 Step Evidence Review",
     "",
     "verify 只证明 BDD runner 跑过目标 feature 且 report 覆盖全部场景。它不自动证明 Then 的业务语义正确。",
+    "",
+    "目录治理:",
+    "  - harness/ 只放业务契约,不放 runner/config/steps/support",
+    "  - BDD 执行代码推荐 tests-or-src-test/contract/bdd/{runner,config,steps,support}",
+    "  - runner 默认一个 suite 一个,不要按 feature 复制",
+    "  - steps 必须按业务域分目录,例如 steps/order/OrderSteps",
+    "  - API client、fixture、factory、cleaner、helper 放 support/",
     "",
     "verify PASS 后必须输出 Step Evidence Review:",
     "| Then | 实际断言 | 证据等级 | 是否匹配 |",
@@ -145,21 +181,19 @@ function renderBddGuide(): string {
 
 function renderLintGuide(): string {
   return [
-    "lint: AI 代码质量门禁",
+    "lint: 项目代码质量门禁",
     "",
-    "lint 独立于 check。check 管 harness 契约质量;lint 管 AI 写出来的代码质量。",
+    "lint 独立于 check。check 管 harness 契约质量;lint 执行项目显式配置的代码质量规则。",
     "",
     "默认行为:",
     "  - scope=diff: 只扫描本次新增/修改的源码行",
+    "  - 同时读取 harness/lint/rules.yaml;配置后会执行项目自定义禁用规则",
+    "  - 默认不生成自定义规则;必须按项目约定显式添加",
     "  - 同时读取 commands.lint;配置后会执行宿主项目自己的 lint 命令",
+    "  - 不内置 console/debugger/try-catch 等代码风格规则",
     "",
-    "内置会拦:",
-    "  - console.log/debug/dir/trace",
-    "  - debugger",
-    "  - @ts-ignore",
-    "  - eslint-disable",
-    "  - 空 catch",
-    "  - System.out/System.err 调试输出",
+    "自定义规则:",
+    LINT_RULES_SCHEMA_HELP,
     "",
     "推荐配置:",
     "  commands:",

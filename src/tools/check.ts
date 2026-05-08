@@ -7,7 +7,7 @@ import { relative, resolve } from "node:path";
 import { Glob } from "bun";
 import { z } from "zod";
 import { loadCapabilityMap, normalizeMapRelPath } from "../capability_map.ts";
-import { loadConfig } from "../config.ts";
+import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import {
   analyzeBuiltinConstraintSteps,
   renderBuiltinConstraintRun,
@@ -49,7 +49,7 @@ const SCENARIO_RE = /^\s*(?:Scenario|场景|場景|Escenario):\s*.+$/gm;
 export async function executeCheck(input: CheckInput): Promise<string> {
   const root = resolveProjectRoot(input.path);
   const loaded = await loadConfig(root);
-  if (!loaded) return `No harness.yaml found at ${root}`;
+  if (!loaded) return formatMissingHarnessConfig(root);
 
   const staticChecks = await collectStaticChecks(
     loaded.projectRoot,

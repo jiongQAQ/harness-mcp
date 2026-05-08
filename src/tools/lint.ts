@@ -6,7 +6,8 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Glob } from "bun";
 import { z } from "zod";
-import { loadConfig } from "../config.ts";
+import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
+import { loadLintRules, type LintRuleEntry } from "../lint_rules.ts";
 import { parseReport, type ParsedReport } from "../parsers/report.ts";
 import { resolveProjectRoot } from "../project.ts";
 import { runShell } from "../runner.ts";
@@ -50,57 +51,21 @@ const SKIP_SEGMENTS = new Set([
   "coverage",
 ]);
 
-const BUILTIN_RULES: LintRule[] = [
-  {
-    id: "no-console-log",
-    pattern: /\bconsole\.(log|debug|dir|trace)\s*\(/,
-    message: "禁止提交调试输出 console.log/debug/dir/trace",
-    fix: "删除调试输出;确需日志时使用项目统一 logger",
-  },
-  {
-    id: "no-debugger",
-    pattern: /\bdebugger\s*;?/,
-    message: "禁止提交 debugger 断点",
-    fix: "删除 debugger",
-  },
-  {
-    id: "no-ts-ignore",
-    pattern: /@ts-ignore/,
-    message: "禁止用 @ts-ignore 跳过类型检查",
-    fix: "修正类型问题;确需例外时使用带原因的项目约定",
-  },
-  {
-    id: "no-eslint-disable",
-    pattern: /eslint-disable(?:-next-line)?/,
-    message: "禁止随意禁用 ESLint",
-    fix: "修正 lint 问题;确需例外时写入项目允许的局部说明",
-  },
-  {
-    id: "no-empty-catch",
-    pattern: /catch\s*(?:\([^)]*\))?\s*\{\s*\}/,
-    message: "禁止空 catch 吞掉异常",
-    fix: "显式处理异常、记录上下文或重新抛出",
-  },
-  {
-    id: "no-system-out",
-    pattern: /\bSystem\.(out|err)\.println\s*\(/,
-    message: "禁止提交 System.out/System.err 调试输出",
-    fix: "删除调试输出;确需日志时使用项目统一 logger",
-  },
-];
-
 export async function executeLint(input: LintInput): Promise<string> {
   const root = resolveProjectRoot(input.path);
   const loaded = await loadConfig(root);
-  if (!loaded) return `No harness.yaml found at ${root}`;
+  if (!loaded) return formatMissingHarnessConfig(root);
 
   const scope = input.scope ?? "diff";
   const command = loaded.config.commands?.lint;
   const workdir = command ? resolve(loaded.projectRoot, command.workdir ?? ".") : null;
+  const loadedRules = await loadLintRules(loaded.specDirAbs);
+  if (!loadedRules.ok) return loadedRules.error;
   const candidates = scope === "all"
     ? await collectAllSourceLines(loaded.projectRoot)
     : await collectAddedSourceLines(loaded.projectRoot);
-  const violations = findViolations(candidates);
+  const customRules = compileCustomRules(loadedRules.rules);
+  const customViolations = findViolations(candidates, customRules);
 
   if (input.dryRun) {
     const payload = {
@@ -108,11 +73,13 @@ export async function executeLint(input: LintInput): Promise<string> {
       dry_run: true,
       project_root: loaded.projectRoot,
       scope,
-      builtin_rules: BUILTIN_RULES.map((rule) => ({
+      custom_rules: customRules.map((rule) => ({
         id: rule.id,
         message: rule.message,
       })),
-      builtin_candidate_count: candidates.length,
+      custom_rules_path: loadedRules.path,
+      custom_rules_file_exists: loadedRules.exists,
+      custom_candidate_count: candidates.length,
       cmd: command?.cmd ?? null,
       workdir,
       report_path: command?.report && workdir ? resolve(workdir, command.report.path) : null,
@@ -140,17 +107,19 @@ export async function executeLint(input: LintInput): Promise<string> {
         commandResult.timedOut ||
         (parsed && parsed.summary.failed > 0)),
   );
-  const status = violations.length > 0 || commandFailed ? "fail" : "pass";
+  const status = customViolations.length > 0 || commandFailed ? "fail" : "pass";
   const payload = {
     command_type: "lint",
     status,
     project_root: loaded.projectRoot,
     scope,
-    builtin_summary: {
+    custom_summary: {
       checked_lines: candidates.length,
-      failed: violations.length,
+      failed: customViolations.length,
     },
-    violations,
+    custom_violations: customViolations,
+    custom_rules_path: loadedRules.path,
+    custom_rules_file_exists: loadedRules.exists,
     cmd: command?.cmd ?? null,
     workdir,
     exit_code: commandResult?.exitCode ?? null,
@@ -215,10 +184,19 @@ async function collectAllSourceLines(projectRoot: string): Promise<LintCandidate
   return candidates;
 }
 
-function findViolations(candidates: LintCandidate[]): LintViolation[] {
+function compileCustomRules(rules: LintRuleEntry[]): LintRule[] {
+  return rules.map((rule) => ({
+    id: `custom:${rule.id}`,
+    pattern: new RegExp(rule.pattern, rule.flags ?? ""),
+    message: rule.message,
+    fix: rule.fix,
+  }));
+}
+
+function findViolations(candidates: LintCandidate[], rules: LintRule[]): LintViolation[] {
   const violations: LintViolation[] = [];
   for (const candidate of candidates) {
-    for (const rule of BUILTIN_RULES) {
+    for (const rule of rules) {
       if (!rule.pattern.test(candidate.content)) continue;
       violations.push({
         ...candidate,
@@ -292,16 +270,16 @@ function normalizePath(path: string): string {
 
 function renderDryRun(payload: {
   scope: string;
-  builtin_rules: { id: string; message: string }[];
-  builtin_candidate_count: number;
+  custom_rules: { id: string; message: string }[];
+  custom_candidate_count: number;
   cmd: string | null;
   workdir: string | null;
 }): string {
   return [
     "Lint dry run",
     `scope: ${payload.scope}`,
-    `builtin candidate lines: ${payload.builtin_candidate_count}`,
-    `builtin rules: ${payload.builtin_rules.map((rule) => rule.id).join(", ")}`,
+    `custom candidate lines: ${payload.custom_candidate_count}`,
+    `custom rules: ${payload.custom_rules.map((rule) => rule.id).join(", ") || "(none)"}`,
     payload.cmd ? `$ ${payload.cmd}\n  cwd: ${payload.workdir}` : "commands.lint: (not configured)",
   ].join("\n");
 }
@@ -309,8 +287,8 @@ function renderDryRun(payload: {
 function renderLint(payload: {
   status: string;
   scope: string;
-  builtin_summary: { checked_lines: number; failed: number };
-  violations: LintViolation[];
+  custom_summary: { checked_lines: number; failed: number };
+  custom_violations: LintViolation[];
   cmd: string | null;
   exit_code: number | null;
   timed_out: boolean;
@@ -320,17 +298,17 @@ function renderLint(payload: {
   const lines = [
     `Lint: ${payload.status.toUpperCase()}`,
     `scope: ${payload.scope}`,
-    `builtin: checked=${payload.builtin_summary.checked_lines} failed=${payload.builtin_summary.failed}`,
+    `custom: checked=${payload.custom_summary.checked_lines} failed=${payload.custom_summary.failed}`,
   ];
   if (payload.cmd) {
     lines.push(`command: exit=${payload.exit_code}${payload.timed_out ? " (TIMED OUT)" : ""}, ${payload.duration_ms}ms`);
   } else {
     lines.push("command: (commands.lint not configured)");
   }
-  if (payload.violations.length > 0) {
+  if (payload.custom_violations.length > 0) {
     lines.push("");
-    lines.push("Violations:");
-    for (const violation of payload.violations) {
+    lines.push("Custom violations:");
+    for (const violation of payload.custom_violations) {
       lines.push(`  x ${violation.rule} ${violation.file}:${violation.line}`);
       lines.push(`    ${violation.content}`);
       lines.push(`    ${violation.message}`);

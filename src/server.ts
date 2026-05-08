@@ -24,12 +24,12 @@ export function createServer() {
       "  2. discover PASS → 人工确认 → contract 写 capability-map.yaml 和 Rule-based feature",
       "  3. contract PASS → Feature Contract Review → 再写 BDD steps 和实现",
       "  4. 改完 → verify 跑 capability/flow BDD → Step Evidence Review → check",
-      "  5. 交付前 → lint 强制检查 AI 代码坏味道和宿主项目 lint 命令",
+      "  5. 交付前 → lint 执行 harness/lint/rules.yaml 自定义禁用规则和宿主项目 lint 命令",
       "",
-      "若不知道怎么开始 → help(),再 context()。",
-      "若用户问当前项目业务契约 → context()/read()。",
+      "若不知道怎么开始 → guide(),再 project_context()。",
+      "若用户问当前项目业务契约 → project_context()/read_contract()。",
       "若用户要新增/补充业务 feature → discover(),不要直接 contract。",
-      "若用户担心 AI 写烂代码 → lint(),不要用 check 代替代码质量门禁。",
+      "若用户担心 AI 写烂代码 → 配置 harness/lint/rules.yaml 或 commands.lint 后运行 lint(),不要用 check 代替代码质量门禁。",
       "",
       "── Feature 文件协议(所有项目硬性遵守) ──",
       "  • 所有新建/修改的 harness .feature 文件默认中文,必须写 # language: zh-CN",
@@ -54,20 +54,23 @@ export function createServer() {
       "  • 业务能力 → spec_dir/features/<业务域>/<业务动作>.feature,不要直接放在 harness/<业务域>",
       "  • charter 不写 Gherkin;constraints / flows 使用 .feature 并加 # language: zh-CN",
       "  • BDD step definitions、runner config、测试代码和报告不写进 spec_dir/harness;它们属于宿主项目 test/build 输出",
+      "  • BDD 执行代码推荐 tests-or-src-test/contract/bdd/{runner,config,steps,support}",
+      "  • runner 默认一个 suite 一个;steps 按业务域分目录;client/fixture/cleaner/helper 放 support",
       "  • check 会拒绝浅 feature、错误目录和 harness 内 BDD 实现",
+      "  • lint 只执行 harness/lint/rules.yaml 自定义禁用规则和宿主项目 lint 命令,不内置代码风格判断",
     ].join("\n"),
   });
 
   server.addTool({
-    name: "help",
-    description: toolDescription("help"),
+    name: "guide",
+    description: toolDescription("guide"),
     parameters: HelpInputSchema,
     execute: async (input) => executeHelp(input),
   });
 
   server.addTool({
-    name: "context",
-    description: toolDescription("context"),
+    name: "project_context",
+    description: toolDescription("project_context"),
     parameters: ContextInputSchema,
     execute: async (input) => executeContext(input),
   });
@@ -87,8 +90,8 @@ export function createServer() {
   });
 
   server.addTool({
-    name: "read",
-    description: toolDescription("read"),
+    name: "read_contract",
+    description: toolDescription("read_contract"),
     parameters: ReadInputSchema,
     execute: async (input) => executeRead(input),
   });

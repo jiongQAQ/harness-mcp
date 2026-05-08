@@ -7,7 +7,7 @@ import { relative } from "node:path";
 import { Glob } from "bun";
 import { z } from "zod";
 import { loadCapabilityMap } from "../capability_map.ts";
-import { loadConfig } from "../config.ts";
+import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import { discoverCapabilities } from "../capability.ts";
 import { resolveProjectRoot } from "../project.ts";
 
@@ -30,12 +30,11 @@ export async function executeContext(input: ContextInput): Promise<string> {
   if (!loaded) {
     return input.raw
       ? JSON.stringify(
-          { error: "no_config", message: `No harness.yaml found at ${root}` },
+          { error: "no_config", message: formatMissingHarnessConfig(root) },
           null,
           2,
         )
-      : `No harness.yaml found at ${root}.\n` +
-          `创建一个最小配置:\n\n  version: 1\n  spec_dir: harness\n`;
+      : formatMissingHarnessConfig(root);
   }
 
   const charter = await readCharter(loaded.charterDirAbs, loaded.projectRoot);
@@ -152,11 +151,15 @@ export async function executeContext(input: ContextInput): Promise<string> {
   lines.push("  • Feature Contract Review 只审 feature 契约,不审 step 实现");
   lines.push("  • verify PASS 不触发 Feature Contract Review");
   lines.push("  • BDD step definitions 和 runner 配置写在宿主项目测试目录,不要写进 harness/");
+  lines.push("  • BDD 执行代码推荐 tests-or-src-test/contract/bdd/{runner,config,steps,support}");
+  lines.push("  • runner 默认一个 suite 一个;steps 必须按业务域分目录;API client/fixture/cleaner/helper 放 support");
+  lines.push("  • 禁止把 *Steps、*RunnerTest、*Config 平铺在 bdd 根目录");
   lines.push("  • Step Evidence Review 只审 step 断言证据,不审 feature 划分");
   lines.push("  • Step 自审触发: BDD steps 写完/修改后,或 verify PASS 后宣称 BDD 有效前");
   lines.push("  • Step Evidence Review 也叫 Then-to-Assertion 自审");
   lines.push("  • Then 写 UI 展示时必须有浏览器/DOM/视觉断言,API 断言不能证明 UI 展示");
-  lines.push("  • lint() 用于强制检查 AI 新增代码坏味道和宿主项目 lint 命令");
+  lines.push("  • lint() 用于执行 harness/lint/rules.yaml 自定义禁用规则和宿主项目 lint 命令");
+  lines.push("  • harness/lint/rules.yaml 是行级正则禁用规则;跨行语义检查应接入 commands.lint");
   lines.push("  • harness .feature 默认中文,新建/修改时必须包含 # language: zh-CN");
   lines.push("  • feature 必须包含: 业务来源 / 意图 / 边界 / 待确认");
   lines.push("  • 禁止空泛 Then: 应返回成功 / 应返回完整内容 / 接口调用成功 / 状态码 200");

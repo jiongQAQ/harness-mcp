@@ -14,6 +14,8 @@ export const HELP_TOPICS = [
   "tools",
   "discover",
   "contract",
+  "harness-yaml",
+  "capability-map",
   "feature",
   "bdd",
   "lint",
@@ -22,21 +24,21 @@ export const HELP_TOPICS = [
 
 export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
-    name: "help",
+    name: "guide",
     group: "入门",
     description: "查看 harness-mcp 的工具说明、业务发现流程和 BDD 契约写法;不读取当前项目。",
     useWhen: "第一次使用、不确定下一步该调什么工具、需要查看 MCP 命令用法时。",
     commonArgs: ["topic", "raw"],
-    example: "help({})",
-    notes: ["help 只介绍 MCP 怎么用,不总结当前项目。"],
+    example: "guide({})",
+    notes: ["guide 只介绍 MCP 怎么用,不总结当前项目。"],
   },
   {
-    name: "context",
+    name: "project_context",
     group: "读上下文",
     description: "读取项目章程、能力地图、已有业务契约和 AI 使用指引。",
     useWhen: "AI 准备理解或修改当前项目时先调用。",
     commonArgs: ["path", "raw"],
-    example: "context({})",
+    example: "project_context({})",
     notes: ["只读。"],
   },
   {
@@ -58,12 +60,12 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     notes: ["feature 必须有 # entrypoint 和 Rule/规则。成功后触发 Feature Contract Review。"],
   },
   {
-    name: "read",
+    name: "read_contract",
     group: "读契约",
     description: "列出、读取或搜索已有业务契约。",
     useWhen: "需要定位已有 capability、读取 feature 全文或搜索业务词时。",
     commonArgs: ["path", "capability", "query", "raw"],
-    example: 'read({ "capability": "order.create" })',
+    example: 'read_contract({ "capability": "order.create" })',
     notes: ["只读。"],
   },
   {
@@ -78,11 +80,11 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "lint",
     group: "代码质量",
-    description: "强制检查 AI 新增代码坏味道,并可执行宿主项目 commands.lint。",
-    useWhen: "AI 写完代码后、交付前,需要独立拦截调试输出、禁用检查、临时兜底等低质量代码。",
+    description: "执行 harness/lint/rules.yaml 自定义禁用规则,并可执行宿主项目 commands.lint。",
+    useWhen: "AI 写完代码后、交付前,需要按项目约定执行代码质量门禁。",
     commonArgs: ["path", "scope", "dryRun", "raw"],
     example: 'lint({ "scope": "diff", "raw": true })',
-    notes: ["默认只扫本次新增/修改行。配置 commands.lint 后会同时执行宿主项目 lint 命令。"],
+    notes: ["不内置代码风格规则。配置 harness/lint/rules.yaml 后会执行行级正则禁用规则。", "配置 commands.lint 后会同时执行宿主项目 lint 命令。"],
   },
   {
     name: "check",

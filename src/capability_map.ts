@@ -41,6 +41,41 @@ export interface CapabilityMapCapability {
   intent: string;
 }
 
+export const CAPABILITY_MAP_EXAMPLE = `version: 1
+domains:
+  order:
+    capabilities:
+      - id: order.create
+        file: features/order/create.feature
+        entrypoint: OrderController#create
+        intent: 客户提交有效购买请求后创建待支付订单
+flows:
+  - id: order.customerPurchase
+    file: flows/customer-purchase.feature
+    uses:
+      - order.create
+`;
+
+export const CAPABILITY_MAP_SCHEMA_HELP = [
+  "正确格式:",
+  "```yaml",
+  CAPABILITY_MAP_EXAMPLE.trimEnd(),
+  "```",
+  "",
+  "正确顶层字段:",
+  "  - version",
+  "  - domains",
+  "  - flows",
+  "",
+  "禁止格式:",
+  "  - 顶层直接写 order.create:",
+  "  - 顶层写 capabilities:",
+  "",
+  "Next action:",
+  '  1. 调用 guide({ topic: "capability-map" }) 查看 schema',
+  '  2. 使用 contract({ ..., map_content: "<完整正确 YAML>" }) 覆盖修复 capability-map.yaml',
+].join("\n");
+
 export type CapabilityMapLoad =
   | { exists: false; path: string }
   | { exists: true; path: string; ok: false; error: string }
@@ -88,25 +123,32 @@ export function parseCapabilityMapContent(
   try {
     parsed = parseYaml(content);
   } catch (e) {
-    return { ok: false, error: `YAML 解析失败: ${(e as Error).message}` };
+    return { ok: false, error: formatCapabilityMapError(`YAML 解析失败: ${(e as Error).message}`) };
   }
 
   const result = CapabilityMapSchema.safeParse(parsed);
   if (!result.success) {
     return {
       ok: false,
-      error: result.error.issues
-        .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
-        .join("; "),
+      error: formatCapabilityMapError(formatZodIssues(result.error.issues)),
     };
   }
 
   const issues = validateCapabilityMap(result.data);
   if (issues.length > 0) {
-    return { ok: false, error: issues.join("; ") };
+    return { ok: false, error: formatCapabilityMapError(issues.join("; ")) };
   }
 
   return { ok: true, map: result.data };
+}
+
+export function formatCapabilityMapError(error: string): string {
+  return [
+    "capability-map.yaml 格式错误:",
+    `  - ${error}`,
+    "",
+    CAPABILITY_MAP_SCHEMA_HELP,
+  ].join("\n");
 }
 
 export function flattenCapabilityMap(map: CapabilityMap): CapabilityMapCapability[] {
@@ -209,4 +251,10 @@ function validateCapabilityMap(map: CapabilityMap): string[] {
   }
 
   return issues;
+}
+
+function formatZodIssues(issues: z.ZodIssue[]): string {
+  return issues
+    .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+    .join("; ");
 }

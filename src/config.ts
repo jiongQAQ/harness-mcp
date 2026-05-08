@@ -52,6 +52,47 @@ export const ConfigSchema = z.object({
 
 export type HarnessConfig = z.infer<typeof ConfigSchema>;
 
+export const HARNESS_CONFIG_EXAMPLE = `version: 1
+spec_dir: harness
+charter_dir: harness/_charter
+
+bdd:
+  runner: custom
+  cmd: "your-bdd-command {feature}"
+  workdir: "."
+  feature_arg_pattern: "{feature}"
+  report:
+    format: cucumber-json
+    path: target/cucumber.json
+
+commands:
+  lint:
+    cmd: "your-lint-command"
+    workdir: "."
+`;
+
+export const HARNESS_CONFIG_SCHEMA_HELP = [
+  "正确格式:",
+  "```yaml",
+  HARNESS_CONFIG_EXAMPLE.trimEnd(),
+  "```",
+  "",
+  "正确顶层字段:",
+  "  - version",
+  "  - spec_dir",
+  "  - charter_dir",
+  "  - bdd",
+  "  - commands",
+  "  - ai_hints",
+  "",
+  "说明:",
+  "  - 将 your-bdd-command 和 your-lint-command 替换为宿主项目真实命令",
+  "",
+  "Next action:",
+  "  1. 修正 harness.yaml",
+  "  2. 重新调用 project_context() 或 check() 验证配置",
+].join("\n");
+
 export interface LoadedConfig {
   /** 项目根的绝对路径 */
   projectRoot: string;
@@ -70,6 +111,14 @@ export class ConfigError extends Error {
     super(message);
     this.name = "ConfigError";
   }
+}
+
+export function formatMissingHarnessConfig(projectRoot: string): string {
+  return [
+    `No harness.yaml found at ${projectRoot}.`,
+    "",
+    HARNESS_CONFIG_SCHEMA_HELP,
+  ].join("\n");
 }
 
 /**
@@ -99,15 +148,15 @@ export async function loadConfig(
   try {
     parsed = parseYaml(raw);
   } catch (e) {
-    throw new ConfigError(`harness.yaml YAML 解析失败: ${(e as Error).message}`);
+    throw new ConfigError(formatHarnessConfigError(`YAML 解析失败: ${(e as Error).message}`));
   }
 
   const result = ConfigSchema.safeParse(parsed);
   if (!result.success) {
     throw new ConfigError(
-      `harness.yaml 配置不合法:\n${result.error.issues
-        .map((i) => `  - ${i.path.join(".")}: ${i.message}`)
-        .join("\n")}`,
+      formatHarnessConfigError(result.error.issues
+        .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+        .join("; ")),
     );
   }
 
@@ -124,4 +173,13 @@ export async function loadConfig(
     specDirAbs,
     charterDirAbs,
   };
+}
+
+function formatHarnessConfigError(error: string): string {
+  return [
+    "harness.yaml 配置不合法:",
+    `  - ${error}`,
+    "",
+    HARNESS_CONFIG_SCHEMA_HELP,
+  ].join("\n");
 }

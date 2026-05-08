@@ -53,12 +53,12 @@ send({ jsonrpc: "2.0", id: 2, method: "tools/list" });
 
 await new Promise((r) => setTimeout(r, 300));
 
-// Step 3: call help as the smallest practical tool
+// Step 3: call guide as the smallest practical tool
 send({
   jsonrpc: "2.0",
   id: 3,
   method: "tools/call",
-  params: { name: "help", arguments: { topic: "overview" } },
+  params: { name: "guide", arguments: { topic: "overview" } },
 });
 
 await new Promise((r) => setTimeout(r, 500));
@@ -70,7 +70,7 @@ for (const r of responses) {
   console.log(JSON.stringify(r, null, 2));
 }
 
-const helpResp = responses.find((r) => r.id === 3);
+const guideResp = responses.find((r) => r.id === 3);
 const toolsResp = responses.find((r) => r.id === 2);
 const toolNames =
   toolsResp?.result?.tools?.map((tool: { name: string }) => tool.name) ?? [];
@@ -78,21 +78,24 @@ const toolNames =
 const expectedTools = [
   "check",
   "contract",
-  "context",
   "discover",
-  "help",
+  "guide",
   "lint",
-  "read",
+  "project_context",
+  "read_contract",
   "verify",
 ];
 
 const removedTools = [
+  "context",
   "create_spec",
   "doctor",
   "flow",
+  "help",
   "info",
   "list_capabilities",
   "ls",
+  "read",
   "read_spec",
   "run",
   "search",
@@ -105,8 +108,8 @@ if (toolNames.includes("ping")) {
   process.exit(1);
 }
 
-if (!String(helpResp?.result?.content?.[0]?.text ?? "").includes("harness-mcp help")) {
-  console.log("\n❌ FAIL: help overview did not return manual text");
+if (!String(guideResp?.result?.content?.[0]?.text ?? "").includes("harness-mcp guide")) {
+  console.log("\n❌ FAIL: guide overview did not return manual text");
   process.exit(1);
 }
 
@@ -124,5 +127,5 @@ for (const name of removedTools) {
   }
 }
 
-console.log("\n✅ PASS: practical tool set is registered and help is callable");
+console.log("\n✅ PASS: practical tool set is registered and guide is callable");
 process.exit(0);

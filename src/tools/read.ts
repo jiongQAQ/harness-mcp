@@ -8,7 +8,7 @@ import { Glob } from "bun";
 import { z } from "zod";
 import { loadCapabilityMap } from "../capability_map.ts";
 import { discoverCapabilities, matchCapabilities } from "../capability.ts";
-import { loadConfig } from "../config.ts";
+import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import { resolveProjectRoot } from "../project.ts";
 
 export const ReadInputSchema = z.object({
@@ -23,7 +23,7 @@ export type ReadInput = z.infer<typeof ReadInputSchema>;
 export async function executeRead(input: ReadInput): Promise<string> {
   const root = resolveProjectRoot(input.path);
   const loaded = await loadConfig(root);
-  if (!loaded) return `No harness.yaml found at ${root}`;
+  if (!loaded) return formatMissingHarnessConfig(root);
 
   if (input.capability) {
     const caps = await discoverCapabilities(loaded.projectRoot, loaded.specDirAbs, loaded.charterDirAbs);
@@ -49,14 +49,26 @@ export async function executeRead(input: ReadInput): Promise<string> {
   const map = await loadCapabilityMap(loaded.specDirAbs);
   const payload = {
     project_root: loaded.projectRoot,
-    capability_map: map.exists && map.ok ? { capabilities: map.capabilities, flows: map.flows } : null,
+    capability_map:
+      !map.exists
+        ? null
+        : map.ok
+          ? { capabilities: map.capabilities, flows: map.flows }
+          : { error: map.error },
     capabilities: caps.map((cap) => ({ name: cap.name, file: cap.fileRel, title: cap.title, tags: cap.tags })),
   };
   if (input.raw) return JSON.stringify(payload, null, 2);
-  return [
+  const lines: string[] = [];
+  if (map.exists && !map.ok) {
+    lines.push("Capability Map: invalid");
+    lines.push(map.error);
+    lines.push("");
+  }
+  lines.push(
     `Capabilities: ${payload.capabilities.length}`,
     ...payload.capabilities.map((cap) => `  • ${cap.name} -> ${cap.file}`),
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 async function searchFeatures(projectRoot: string, specDirAbs: string, query: string) {

@@ -8,11 +8,12 @@ import { z } from "zod";
 import {
   capabilityMapPath,
   flattenCapabilityMap,
+  formatCapabilityMapError,
   loadCapabilityMap,
   normalizeMapRelPath,
   parseCapabilityMapContent,
 } from "../capability_map.ts";
-import { loadConfig } from "../config.ts";
+import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import {
   checkFeatureQuality,
   formatFeatureQualityFailure,
@@ -42,7 +43,7 @@ const ENTRYPOINT_RE = /^#\s*entrypoint:\s*(.+)\s*$/m;
 export async function executeContract(input: ContractInput): Promise<string> {
   const root = resolveProjectRoot(input.path);
   const loaded = await loadConfig(root);
-  if (!loaded) return `No harness.yaml found at ${root}`;
+  if (!loaded) return formatMissingHarnessConfig(root);
 
   const target = resolveTargetFile(loaded.projectRoot, loaded.specDirAbs, input.file, input.kind);
   if (!target.ok) return target.message;
@@ -128,7 +129,7 @@ async function loadOrParseContractMap(
   if (mapContent) {
     const parsed = parseCapabilityMapContent(mapContent);
     if (!parsed.ok) {
-      return { ok: false, message: `capability-map.yaml 校验失败:\n  - ${parsed.error}` };
+      return { ok: false, message: parsed.error };
     }
     return {
       ok: true,
@@ -141,11 +142,11 @@ async function loadOrParseContractMap(
   if (!loaded.exists) {
     return {
       ok: false,
-      message: "缺少 capability-map.yaml。请通过 contract.map_content 提交业务能力地图。",
+      message: formatCapabilityMapError("缺少 capability-map.yaml。请通过 contract.map_content 提交业务能力地图。"),
     };
   }
   if (!loaded.ok) {
-    return { ok: false, message: `capability-map.yaml 校验失败:\n  - ${loaded.error}` };
+    return { ok: false, message: loaded.error };
   }
   return { ok: true, capabilities: loaded.capabilities, flows: loaded.flows };
 }

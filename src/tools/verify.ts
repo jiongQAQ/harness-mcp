@@ -16,7 +16,7 @@ import {
 } from "../bdd.ts";
 import { discoverCapabilities, matchCapabilities } from "../capability.ts";
 import { loadCapabilityMap, normalizeMapRelPath } from "../capability_map.ts";
-import { loadConfig } from "../config.ts";
+import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import { captureGitDiff } from "../git.ts";
 import { parseReport, type ParsedReport } from "../parsers/report.ts";
 import { resolveProjectRoot } from "../project.ts";
@@ -49,7 +49,7 @@ interface FlowSpec {
 export async function executeVerify(input: VerifyInput): Promise<string> {
   const root = resolveProjectRoot(input.path);
   const loaded = await loadConfig(root);
-  if (!loaded) return `No harness.yaml found at ${root}`;
+  if (!loaded) return formatMissingHarnessConfig(root);
   if (!loaded.config.bdd) return "harness.yaml 未配置 bdd,无法执行 BDD verify。";
 
   const targetType = input.target_type ?? "capability";
@@ -171,6 +171,9 @@ async function resolveFlowTargets(
   specDirAbs: string,
   target?: string,
 ): Promise<BddTarget[] | string> {
+  const map = await loadCapabilityMap(specDirAbs);
+  if (map.exists && !map.ok) return map.error;
+
   const flows = await discoverFlows(projectRoot, specDirAbs);
   if (!target) return "verify flow 需要 target,例如 verify({ target_type: \"flow\", target: \"下单\" })";
   const q = target.toLowerCase().trim();
@@ -182,7 +185,6 @@ async function resolveFlowTargets(
       flow.fileRel.toLowerCase().includes(q),
   );
   if (matched.length === 0) {
-    const map = await loadCapabilityMap(specDirAbs);
     if (map.exists && map.ok) {
       const declared = map.flows.find((flow) => flow.id.toLowerCase() === q);
       if (declared) return `flow ${target} 的文件不存在: ${declared.file}`;
