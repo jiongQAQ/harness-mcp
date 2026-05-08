@@ -3,7 +3,7 @@
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Glob } from "bun";
 import { z } from "zod";
 import { loadConfig } from "../config.ts";

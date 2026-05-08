@@ -32,7 +32,6 @@ export interface BddCoverageResult {
   }[];
 }
 
-const TITLE_RE = /^\s*(?:Feature|功能|功能性|機能|Característica):\s*(.+)$/m;
 const SCENARIO_RE =
   /^\s*(?:Scenario|Scenario Outline|场景|场景大纲|場景|場景大綱|Escenario):\s*(.+)$/gm;
 
@@ -54,11 +53,6 @@ export async function readScenarioNames(fileAbs: string): Promise<string[]> {
   return [...content.matchAll(SCENARIO_RE)]
     .map((match) => match[1]?.trim())
     .filter((name): name is string => Boolean(name));
-}
-
-export async function readFeatureTitle(fileAbs: string): Promise<string> {
-  const content = await readFile(fileAbs, "utf-8");
-  return content.match(TITLE_RE)?.[1]?.trim() ?? "";
 }
 
 export function buildBddCommand(

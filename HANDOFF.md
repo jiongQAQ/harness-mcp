@@ -50,7 +50,7 @@ context -> discover -> 人工确认 -> contract -> Feature Contract Review -> �
 | `src/feature_quality.ts` | feature 质量规则 |
 | `src/capability_map.ts` | capability map schema 与解析 |
 | `src/bdd.ts` | BDD 命令构造和报告覆盖校验 |
-| `src/report.ts` | 报告解析分发 |
+| `src/parsers/report.ts` | 报告解析分发 |
 
 ## 验证脚本
 
@@ -59,6 +59,7 @@ bun run typecheck
 bun run scripts/smoke.ts
 bun run scripts/test-discover.ts
 bun run scripts/test-contract.ts
+bun run scripts/test-context-charter.ts
 bun run scripts/test-verify-bdd.ts
 bun run scripts/test-lint.ts
 bun run scripts/test-check-governance.ts

@@ -76,6 +76,7 @@ bun run typecheck
 bun run scripts/smoke.ts
 bun run scripts/test-discover.ts
 bun run scripts/test-contract.ts
+bun run scripts/test-context-charter.ts
 bun run scripts/test-verify-bdd.ts
 bun run scripts/test-lint.ts
 bun run scripts/test-check-governance.ts

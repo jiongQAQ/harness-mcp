@@ -147,7 +147,7 @@ flows:
 
   业务来源:
     - PRD: 订单创建流程
-    - 代码: OrderController#create
+    - 代码推断: OrderController#create
 
   意图:
     - 客户提交有效购买请求后,系统创建待支付订单并锁定库存。
@@ -232,7 +232,7 @@ Then("应创建一笔待支付订单", async function () {
 });
 ```
 
-如果 Then 写“右侧面板展示章节结构化预览”，step 只断言 API 返回章节数组是不够的；它必须使用 UI/DOM/截图等证据证明展示结果。
+如果 Then 写“订单确认页展示待支付订单和库存锁定提示”，step 只断言 API 返回订单编号是不够的；它必须使用 UI/DOM/截图等证据证明展示结果。
 
 Step Evidence Review 触发时机：
 
@@ -351,6 +351,7 @@ bun run typecheck
 bun run scripts/smoke.ts
 bun run scripts/test-discover.ts
 bun run scripts/test-contract.ts
+bun run scripts/test-context-charter.ts
 bun run scripts/test-verify-bdd.ts
 bun run scripts/test-lint.ts
 bun run scripts/test-check-governance.ts

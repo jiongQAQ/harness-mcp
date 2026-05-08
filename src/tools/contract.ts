@@ -7,7 +7,6 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 import {
   capabilityMapPath,
-  findCapabilityMapEntry,
   flattenCapabilityMap,
   loadCapabilityMap,
   normalizeMapRelPath,

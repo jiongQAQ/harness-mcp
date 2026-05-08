@@ -1,7 +1,7 @@
 {
   "name": "harness-mcp",
   "version": "0.0.1",
-  "description": "Language-agnostic AI collaboration contract layer (MCP server). Read specs, update specs, verify business semantics.",
+  "description": "Business-discovery driven MCP server for BDD contracts, verification, and AI code-quality gates.",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
@@ -14,9 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
+    "@types/bun": "latest",
     "typescript": "^5"
   },
   "dependencies": {

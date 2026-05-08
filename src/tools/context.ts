@@ -8,7 +8,7 @@ import { Glob } from "bun";
 import { z } from "zod";
 import { loadCapabilityMap } from "../capability_map.ts";
 import { loadConfig } from "../config.ts";
-import { discoverCapabilities, type Capability } from "../capability.ts";
+import { discoverCapabilities } from "../capability.ts";
 import { resolveProjectRoot } from "../project.ts";
 
 export const ContextInputSchema = z.object({

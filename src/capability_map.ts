@@ -119,14 +119,6 @@ export function flattenCapabilityMap(map: CapabilityMap): CapabilityMapCapabilit
   return result.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-export function findCapabilityMapEntry(
-  load: CapabilityMapLoad,
-  capability: string,
-): CapabilityMapCapability | null {
-  if (!load.exists || !load.ok) return null;
-  return load.capabilities.find((entry) => entry.id === capability) ?? null;
-}
-
 export function normalizeMapRelPath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\.\/+/, "");
 }

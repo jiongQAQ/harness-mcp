@@ -8,7 +8,7 @@ import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
 const ReportSchema = z.object({
-  format: z.enum(["cucumber-json", "surefire-xml", "pytest-json"]),
+  format: z.enum(["cucumber-json", "surefire-xml"]),
   path: z.string(),
 }).strict();
 
@@ -37,7 +37,6 @@ const BddSchema = z.object({
 }).strict();
 
 const CommandsSchema = z.object({
-  run: CommandSchema.optional(),
   check: CommandSchema.optional(),
   lint: CommandSchema.optional(),
 }).strict();
