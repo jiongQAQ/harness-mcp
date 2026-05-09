@@ -41,10 +41,13 @@ const CommandsSchema = z.object({
   lint: CommandSchema.optional(),
 }).strict();
 
+const LanguageSchema = z.enum(["zh-CN", "en"]);
+
 export const ConfigSchema = z.object({
   version: z.literal(1),
   spec_dir: z.string().default("harness"),
   charter_dir: z.string().optional(),
+  language: LanguageSchema.optional().default("zh-CN"),
   bdd: BddSchema.optional(),
   commands: CommandsSchema.optional(),
   ai_hints: z.string().optional(),
@@ -55,6 +58,7 @@ export type HarnessConfig = z.infer<typeof ConfigSchema>;
 export const HARNESS_CONFIG_EXAMPLE = `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+language: zh-CN
 
 bdd:
   runner: custom
@@ -81,12 +85,14 @@ export const HARNESS_CONFIG_SCHEMA_HELP = [
   "  - version",
   "  - spec_dir",
   "  - charter_dir",
+  "  - language",
   "  - bdd",
   "  - commands",
   "  - ai_hints",
   "",
   "说明:",
   "  - 将 your-bdd-command 和 your-lint-command 替换为宿主项目真实命令",
+  "  - language 可选 zh-CN 或 en;缺省为 zh-CN",
   "",
   "Next action:",
   "  1. 修正 harness.yaml",

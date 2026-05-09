@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CAPABILITY_MAP_SCHEMA_HELP } from "../capability_map.ts";
 import { HARNESS_CONFIG_SCHEMA_HELP } from "../config.ts";
 import { LINT_RULES_SCHEMA_HELP } from "../lint_rules.ts";
+import { SOURCE_BLOCK_TEMPLATE } from "../sources.ts";
 import {
   findToolHelp,
   HELP_TOPICS,
@@ -13,7 +14,7 @@ export const HelpInputSchema = z.object({
   topic: z
     .string()
     .optional()
-    .describe("指南主题: overview/workflow/tools/discover/contract/harness-yaml/capability-map/feature/bdd/lint/agent-skills/check 或工具名"),
+    .describe("指南主题: overview/workflow/tools/discover/contract/harness-yaml/capability-map/sources/feature/bdd/lint/agent-skills/check 或工具名"),
   raw: z.boolean().optional().describe("true 返回 JSON,false/缺省 返回格式化文本"),
 });
 
@@ -31,6 +32,7 @@ export async function executeHelp(input: HelpInput): Promise<string> {
   if (topic === "contract" || topic === "feature") return renderContractGuide();
   if (topic === "harness-yaml") return renderHarnessYamlGuide();
   if (topic === "capability-map") return renderCapabilityMapGuide();
+  if (topic === "sources") return renderSourcesGuide();
   if (topic === "bdd") return renderBddGuide();
   if (topic === "lint") return renderLintGuide();
   if (topic === "agent-skills") return renderAgentSkillsGuide();
@@ -52,7 +54,7 @@ function renderOverview(): string {
     "公开工具:",
     ...TOOL_CATALOG.map((tool) => `  - ${tool.name}: ${tool.description}`),
     "",
-    "默认写中文 Gherkin: # language: zh-CN,并使用 功能 / 规则 / 场景 / 假设 / 当 / 那么。",
+    "默认写中文 Gherkin: # language: zh-CN。也可以在 harness.yaml 配置 language: en 后使用英文 Gherkin。",
   ].join("\n");
 }
 
@@ -75,6 +77,7 @@ function renderWorkflow(): string {
     "  verify 负责证明本次 BDD report 覆盖目标 feature 且全部场景 passed。",
     "  lint 负责执行 harness/lint/rules.yaml 自定义禁用规则和宿主项目 lint 命令。",
     "  Step Evidence Review 负责证明每个 Then 被同等级断言验证。",
+    "  sources 负责让每条 Rule/Scenario 能追溯到 PRD、人工确认、代码推断或其他来源。",
   ].join("\n");
 }
 
@@ -91,6 +94,7 @@ function renderDiscoverGuide(): string {
     "  - 业务例子: 成功、失败、边界、异常",
     "  - 待确认问题: 未确认内容不能写成承诺",
     "  - 证据来源: PRD / 用户提供 / 代码推断 / 现有测试 / 人工确认",
+    "  - 来源文档: 进入 feature 的业务承诺应沉淀到 harness/sources/YYYY-MM-DD-xxx.md",
     "",
     "通过后下一步是 Human Confirmation,不是直接写代码。",
   ].join("\n");
@@ -105,6 +109,10 @@ function renderContractGuide(): string {
     CAPABILITY_MAP_SCHEMA_HELP,
     "",
     "feature 必须是 Rule-first:",
+    "  - language 缺省 zh-CN;配置 language: en 时,feature 头必须写 # language: en",
+    "  - 中文必填段落: 意图 / 边界 / 待确认",
+    "  - 英文必填段落: Intent / Boundaries / To Confirm",
+    "  - Scenario/场景 必须写在 Rule/规则 下,禁止顶层场景",
     "",
     "```gherkin",
     "# language: zh-CN",
@@ -113,9 +121,6 @@ function renderContractGuide(): string {
     "@order",
     "",
     "功能: 创建订单",
-    "",
-    "  业务来源:",
-    "    - 代码推断: OrderController#create",
     "",
     "  意图:",
     "    - 客户提交有效购买请求后,系统创建待支付订单并锁定库存。",
@@ -127,6 +132,11 @@ function renderContractGuide(): string {
     "    - 库存预占超时时间由其他能力定义。",
     "",
     "  规则: 有库存商品可以创建订单",
+    "    # sources:",
+    "    #   current: sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单",
+    "    #   timeline:",
+    "    #     - sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单",
+    "",
     "",
     "    场景: 客户购买有库存商品",
     "      假设 客户已登录",
@@ -135,6 +145,40 @@ function renderContractGuide(): string {
     "```",
     "",
     "禁止空泛 Then: 应返回成功 / 应返回完整内容 / 接口调用成功 / 状态码 200。",
+  ].join("\n");
+}
+
+function renderSourcesGuide(): string {
+  return [
+    "sources: 业务来源追溯",
+    "",
+    "来源文档统一放在 harness/sources/。它可以是 PRD、人工确认、会议纪要、工单、代码推断或现有测试推断。PRD 不是必需的,但进入 feature 的业务承诺必须能追到来源。",
+    "",
+    "目录:",
+    "  harness/sources/YYYY-MM-DD-xxx.md",
+    "",
+    "source 文件不需要 frontmatter。建议用 Markdown 标题和章节表达内容:",
+    "",
+    "```md",
+    "# 创建订单规则代码推断",
+    "",
+    "## 优惠计算失败",
+    "",
+    "从 OrderService#create 推断: 优惠失败时不创建订单,不锁库存。",
+    "```",
+    "",
+    "feature 中只允许这一种固定注释块:",
+    "",
+    "```gherkin",
+    ...SOURCE_BLOCK_TEMPLATE.split("\n"),
+    "```",
+    "",
+    "规则:",
+    "  - sources 注释块放在 Rule/规则 下;如果某个场景来源不同,可以放在 Scenario/场景 下",
+    "  - current 必须出现在 timeline 中",
+    "  - timeline 按 source 文件日期从旧到新排列",
+    "  - 引用路径必须是 sources/YYYY-MM-DD-xxx.md 或 sources/YYYY-MM-DD-xxx.md#章节",
+    "  - contract 写入前硬校验;check 会全量扫描防止手写绕过",
   ].join("\n");
 }
 
@@ -228,6 +272,10 @@ function renderCheckGuide(): string {
     "check 会检查:",
     "  - feature 缺 # entrypoint",
     "  - feature 缺 Rule/规则",
+    "  - Scenario/场景 写在第一个 Rule/规则 前",
+    "  - Rule/Scenario 缺少固定 # sources: 来源块",
+    "  - sources 文件未按 YYYY-MM-DD-xxx.md 命名",
+    "  - sources timeline 日期倒序或 current 不在 timeline 中",
     "  - Then 写得过于空泛",
     "  - 业务 feature 不在 harness/features/<业务域>/ 下",
     "  - _charter 章程误写成 .feature,应使用 Markdown",

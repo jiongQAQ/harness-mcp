@@ -11,6 +11,7 @@ import { loadCapabilityMap } from "../capability_map.ts";
 import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import { discoverCapabilities } from "../capability.ts";
 import { resolveProjectRoot } from "../project.ts";
+import { discoverSources } from "../sources.ts";
 
 export const ContextInputSchema = z.object({
   path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
@@ -40,6 +41,7 @@ export async function executeContext(input: ContextInput): Promise<string> {
 
   const charter = await readCharter(loaded.charterDirAbs, loaded.projectRoot);
   const agentSkills = await discoverAgentSkills(loaded.projectRoot, loaded.specDirAbs);
+  const sources = await discoverSources(loaded.projectRoot, loaded.specDirAbs);
   const caps = await discoverCapabilities(
     loaded.projectRoot,
     loaded.specDirAbs,
@@ -62,6 +64,13 @@ export async function executeContext(input: ContextInput): Promise<string> {
               : { error: capabilityMap.error },
         charter: charter.map((c) => ({ file: c.fileRel, content: c.content })),
         agent_skills: agentSkills,
+        sources: sources.map((source) => ({
+          file: source.fileRel,
+          spec_file: source.specRel,
+          title: source.title,
+          date: source.date,
+          valid_date_name: source.validDateName,
+        })),
         capabilities: caps.map((c) => ({
           name: c.name,
           file: c.fileRel,
@@ -103,6 +112,17 @@ export async function executeContext(input: ContextInput): Promise<string> {
       lines.push(`  • ${skill.name}`);
       if (skill.description) lines.push(`      ${skill.description}`);
       lines.push(`      → ${skill.file}`);
+    }
+    lines.push("");
+  }
+
+  // Sources
+  if (sources.length > 0) {
+    lines.push(`── Sources (${sources.length} files) ──`);
+    for (const source of sources) {
+      lines.push(`  • ${source.specRel}`);
+      lines.push(`      title: ${source.title}`);
+      if (!source.validDateName) lines.push("      invalid: expected sources/YYYY-MM-DD-xxx.md");
     }
     lines.push("");
   }
@@ -175,8 +195,11 @@ export async function executeContext(input: ContextInput): Promise<string> {
   lines.push("  • lint() 用于执行 harness/lint/rules.yaml 自定义禁用规则和宿主项目 lint 命令");
   lines.push("  • harness/lint/rules.yaml 是行级正则禁用规则;跨行语义检查应接入 commands.lint");
   lines.push("  • 项目公共 Agent Skills 可保存在 harness/agent-skills/<skill-name>/SKILL.md;MCP 只列索引,不自动加载或安装");
-  lines.push("  • harness .feature 默认中文,新建/修改时必须包含 # language: zh-CN");
-  lines.push("  • feature 必须包含: 业务来源 / 意图 / 边界 / 待确认");
+  lines.push("  • 业务来源文档放在 harness/sources/YYYY-MM-DD-xxx.md;可来自 PRD、人工确认、会议、工单、代码推断或现有测试");
+  lines.push("  • 每个 Rule/规则 必须有固定 # sources: 注释块,声明 current 和 timeline");
+  lines.push("  • harness.yaml language 缺省 zh-CN,可配置 en;feature 文件头必须匹配 # language");
+  lines.push("  • 中文 feature 必须包含: 意图 / 边界 / 待确认;英文 feature 必须包含: Intent / Boundaries / To Confirm");
+  lines.push("  • Scenario/场景 必须写在 Rule/规则 下,禁止顶层场景");
   lines.push("  • 禁止空泛 Then: 应返回成功 / 应返回完整内容 / 接口调用成功 / 状态码 200");
   lines.push("  • check() 用于拦截 harness 契约质量和治理问题");
 

@@ -8,6 +8,7 @@
 
 - 让 AI 先理解业务能力，再修改代码。
 - 让新需求从 PRD/人工描述沉淀为可审查的 `.feature` 契约。
+- 让每条业务规则能追溯到 PRD、人工确认、代码推断等来源文档。
 - 让已有代码可以反向梳理入口方法、调用链、规则和示例。
 - 让 BDD 通过不只是“命令成功”，而是报告覆盖目标 feature/scenario 且没有 skipped/pending/undefined。
 - 让多模型协作时使用统一的能力划分规则。
@@ -21,6 +22,7 @@
 | `discover` | 把 PRD/代码阅读结果整理成业务发现包，不写文件 |
 | `contract` | 校验并写入 `capability-map.yaml` 和 `.feature` 契约 |
 | `read_contract` | 列出、读取或搜索业务契约 |
+| `read_source` | 列出、读取或搜索业务来源文档 |
 | `verify` | 按 `bdd` 配置运行 capability/flow，并校验报告覆盖 |
 | `lint` | 执行 `harness/lint/rules.yaml` 和宿主项目 lint 命令 |
 | `check` | 执行治理检查和内置静态检查 |
@@ -31,7 +33,7 @@
 project_context -> discover -> 人工确认 -> contract -> Feature Contract Review -> 写 tests/steps 与实现 -> verify -> Step Evidence Review -> lint -> check
 ```
 
-格式不确定时先查 `guide`，常用主题包括 `harness-yaml`、`capability-map`、`contract`、`bdd`、`lint`、`agent-skills` 和 `check`。
+格式不确定时先查 `guide`，常用主题包括 `harness-yaml`、`capability-map`、`sources`、`contract`、`bdd`、`lint`、`agent-skills` 和 `check`。
 
 ## 项目结构
 
@@ -46,6 +48,9 @@ your-project/
     │   ├── conventions.md
     │   └── project-constraints.md
     ├── capability-map.yaml
+    ├── sources/
+    │   ├── 2026-05-08-code-inference-order-create.md
+    │   └── 2026-05-10-manual-confirmation-order-create.md
     ├── features/
     │   └── <domain>/
     │       └── <capability>.feature
@@ -72,6 +77,7 @@ your-project/
 version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+language: zh-CN
 
 bdd:
   runner: cucumber-jvm
@@ -96,6 +102,12 @@ commands:
 - `workdir` 是 BDD 命令执行目录。
 - `{feature}` 会渲染为相对 `workdir` 的 feature 路径。
 - `report.path` 也按 `workdir` 解析。
+
+语言规则：
+
+- `language` 可选 `zh-CN` 或 `en`，缺省为 `zh-CN`。
+- `language: zh-CN` 时，feature 文件头必须写 `# language: zh-CN`，并包含 `意图 / 边界 / 待确认`。
+- `language: en` 时，feature 文件头必须写 `# language: en`，并包含 `Intent / Boundaries / To Confirm`。
 
 ## 能力地图
 
@@ -140,6 +152,58 @@ flows:
 
 `discover` 通过后仍需要人工确认。人工确认的是“业务边界和规则是否正确”，不是 step 实现。
 
+## 业务来源
+
+进入 feature 的业务承诺必须能追溯到来源。来源不等于 PRD；它可以是正式 PRD、人工确认、会议纪要、工单、代码推断或现有测试推断。
+
+来源文档统一放在 `harness/sources/`，文件名按日期命名：
+
+```text
+harness/sources/
+├── 2026-05-08-code-inference-order-create.md
+├── 2026-05-10-manual-confirmation-order-create.md
+└── 2026-05-20-campaign-adjustment.md
+```
+
+source 文件不需要 frontmatter，可以是普通 Markdown：
+
+```md
+# 创建订单规则代码推断
+
+## 优惠计算失败
+
+从 OrderService#create 推断：优惠失败时不创建订单，不锁库存。
+
+待确认：
+- 该行为是产品规则，还是历史实现偶然结果。
+```
+
+feature 的 `规则/Rule` 下必须使用固定注释块声明来源：
+
+```gherkin
+规则: 优惠计算失败时不创建订单
+  # sources:
+  #   current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+  #   timeline:
+  #     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
+  #     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+
+  场景: 优惠服务返回失败
+    假设 客户已登录
+    当 客户使用不可计算的优惠下单
+    那么 不应创建订单
+```
+
+规则：
+
+- 只认 `# sources:`，不认 `# source:`、`# 需求来源:` 或其他变体。
+- `current` 必须出现在 `timeline` 中。
+- `timeline` 按 source 文件日期从旧到新排列。
+- 如果单个场景的来源不同，可以在 `场景/Scenario` 下写自己的 `# sources:` 块。
+- `contract` 写入前会硬校验；`check` 会全量扫描，防止手写绕过。
+
+旧项目接入时，可以先把代码推断沉淀为 source，再逐步补人工确认 source。
+
 ## Feature 契约
 
 `contract` 会一起校验并写入 `capability-map.yaml` 和 `.feature`。能力 feature 应使用 Rule-first 结构：
@@ -152,10 +216,6 @@ flows:
 
 功能: 创建订单
 
-  业务来源:
-    - PRD: 订单创建流程
-    - 代码推断: OrderController#create
-
   意图:
     - 客户提交有效购买请求后,系统创建待支付订单并锁定库存。
 
@@ -166,6 +226,11 @@ flows:
     - 无
 
   规则: 有库存商品可以创建订单
+    # sources:
+    #   current: sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单
+    #   timeline:
+    #     - sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单
+
     场景: 客户购买有库存商品
       假设 客户已登录
       而且 商品 "sku-001" 可售库存为 5
@@ -174,6 +239,11 @@ flows:
       而且 商品 "sku-001" 的可售库存应减少 2
 
   规则: 库存不足时不能创建订单
+    # sources:
+    #   current: sources/2026-05-08-code-inference-order-create.md#库存不足时不能创建订单
+    #   timeline:
+    #     - sources/2026-05-08-code-inference-order-create.md#库存不足时不能创建订单
+
     场景: 客户购买超过库存数量
       假设 客户已登录
       而且 商品 "sku-002" 可售库存为 1
@@ -193,7 +263,9 @@ Feature Contract Review 只审业务契约：
 |---|---|
 | 能力边界 | 是否只表达一个业务目的 |
 | 入口证据 | 是否有 `# entrypoint` 或 planned 入口 |
+| 来源追溯 | 每个 Rule/Scenario 是否有合法 `# sources:` 块 |
 | 规则分组 | 是否用 `规则/Rule` 表达业务分支 |
+| 结构顺序 | Scenario/场景 是否都写在 Rule/规则 下 |
 | 场景覆盖 | 正常、边界、异常、权限是否按需覆盖 |
 | Then 可验证性 | Then 是否描述可观测业务结果 |
 | 待确认 | 不确定内容是否明确写出 |
@@ -349,7 +421,11 @@ MCP 只做索引，不负责加载、安装或校验 skill 内容。
 
 - feature 是否缺少 `# entrypoint`。
 - feature 是否缺少 `规则/Rule`。
+- Scenario/场景 是否写在第一个 Rule/规则 前。
 - Then 是否过于泛化。
+- Rule/Scenario 是否缺少固定 `# sources:` 来源块。
+- `sources/` 文件是否按 `YYYY-MM-DD-xxx.md` 命名。
+- `timeline` 是否按日期升序，`current` 是否在 `timeline` 中。
 - 业务 feature 是否放在 `harness/features/<domain>/` 下。
 - `capability-map.yaml` 与 feature/flow 是否对齐。
 - `harness/` 下是否混入 BDD 实现代码。
@@ -394,7 +470,10 @@ bun run typecheck
 bun run scripts/smoke.ts
 bun run scripts/test-discover.ts
 bun run scripts/test-contract.ts
+bun run scripts/test-sources.ts
+bun run scripts/test-language.ts
 bun run scripts/test-context-charter.ts
+bun run scripts/test-schema-guidance.ts
 bun run scripts/test-verify-bdd.ts
 bun run scripts/test-lint.ts
 bun run scripts/test-check-governance.ts

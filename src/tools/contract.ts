@@ -21,6 +21,10 @@ import {
 import { validateGherkin } from "../gherkin.ts";
 import { resolveProjectRoot } from "../project.ts";
 import {
+  checkFeatureSources,
+  formatFeatureSourceFailure,
+} from "../sources.ts";
+import {
   FEATURE_CONTRACT_REVIEW_ACTION,
   renderNextRequiredAction,
 } from "../review_protocol.ts";
@@ -51,7 +55,12 @@ export async function executeContract(input: ContractInput): Promise<string> {
   const mapValidation = await validateMapForContract(input, loaded.specDirAbs);
   if (!mapValidation.ok) return mapValidation.message;
 
-  const featureValidation = await validateFeatureForContract(input, target.fileRel);
+  const featureValidation = await validateFeatureForContract(
+    input,
+    target.fileRel,
+    loaded.specDirAbs,
+    loaded.config.language,
+  );
   if (!featureValidation.ok) return featureValidation.message;
 
   if (existsSync(target.abs)) {
@@ -154,6 +163,8 @@ async function loadOrParseContractMap(
 async function validateFeatureForContract(
   input: ContractInput,
   fileRel: string,
+  specDirAbs: string,
+  language: "zh-CN" | "en",
 ): Promise<
   | { ok: true; featureName: string; scenarioCount: number }
   | { ok: false; message: string }
@@ -169,8 +180,13 @@ async function validateFeatureForContract(
     }
   }
 
-  const quality = checkFeatureQuality(input.content, fileRel);
+  const quality = checkFeatureQuality(input.content, fileRel, language);
   if (!quality.ok) return { ok: false, message: formatFeatureQualityFailure(quality, fileRel) };
+
+  if (input.kind === "capability") {
+    const sources = await checkFeatureSources(input.content, fileRel, specDirAbs);
+    if (!sources.ok) return { ok: false, message: formatFeatureSourceFailure(sources, fileRel) };
+  }
 
   const validation = validateGherkin(input.content);
   if (!validation.ok) {

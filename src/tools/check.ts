@@ -18,6 +18,11 @@ import { resolveProjectRoot } from "../project.ts";
 import { runShell } from "../runner.ts";
 import { parseReport, type ParsedReport } from "../parsers/report.ts";
 import { checkFeatureQuality } from "../feature_quality.ts";
+import {
+  checkFeatureSources,
+  checkSourceFiles,
+  type SourceIssue,
+} from "../sources.ts";
 
 export const CheckInputSchema = z.object({
   path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
@@ -55,6 +60,7 @@ export async function executeCheck(input: CheckInput): Promise<string> {
     loaded.projectRoot,
     loaded.specDirAbs,
     loaded.charterDirAbs,
+    loaded.config.language,
   );
   const staticStatus = summarizeStaticStatus(staticChecks);
   const constraints = await discoverConstraints(
@@ -177,11 +183,12 @@ async function collectStaticChecks(
   projectRoot: string,
   specDirAbs: string,
   charterDirAbs: string,
+  language: "zh-CN" | "en",
 ): Promise<StaticCheck[]> {
   const checks: StaticCheck[] = [];
   const features = await collectBusinessFeatureFiles(projectRoot, specDirAbs);
   const qualityIssues = features.flatMap((feature) =>
-    checkFeatureQuality(feature.content, feature.fileRel).issues.map((issue) => ({
+    checkFeatureQuality(feature.content, feature.fileRel, language).issues.map((issue) => ({
       ...issue,
       fileRel: feature.fileRel,
     })),
@@ -191,7 +198,7 @@ async function collectStaticChecks(
     "feature_quality.language",
     "feature_quality.entrypoint",
     "feature_quality.required_sections",
-    "feature_quality.business_source",
+    "feature_quality.scenario_under_rule",
     "feature_quality.scenarios",
     "feature_quality.rules",
     "feature_quality.then_specificity",
@@ -214,10 +221,50 @@ async function collectStaticChecks(
   }
 
   checks.push(...await collectFeatureLayoutChecks(projectRoot, specDirAbs));
+  checks.push(...await collectSourceTraceChecks(projectRoot, specDirAbs, features));
   checks.push(...await collectCharterFormatChecks(projectRoot, charterDirAbs));
   checks.push(...await collectMapAlignmentChecks(projectRoot, specDirAbs, features));
   checks.push(...await collectHarnessBddImplementationChecks(projectRoot, specDirAbs));
   return checks;
+}
+
+async function collectSourceTraceChecks(
+  projectRoot: string,
+  specDirAbs: string,
+  features: { fileRel: string; content: string }[],
+): Promise<StaticCheck[]> {
+  const sourceIssues = [
+    ...await checkSourceFiles(projectRoot, specDirAbs),
+    ...(await Promise.all(
+      features.map(async (feature) => (await checkFeatureSources(feature.content, feature.fileRel, specDirAbs)).issues),
+    )).flat(),
+  ];
+
+  const ids = [
+    "sources.files.date_name",
+    "feature_sources.required",
+    "feature_sources.format",
+    "feature_sources.exists",
+    "feature_sources.timeline_order",
+    "feature_sources.current_in_timeline",
+  ];
+
+  return ids.map((id) => {
+    const issues = sourceIssues.filter((issue) => issue.id === id);
+    return {
+      id,
+      level: issues.length === 0 ? "pass" : "fail",
+      message: issues.length === 0 ? `${id} passed` : `${issues.length} ${id} issue(s) found`,
+      detail: formatSourceIssueDetails(issues),
+    };
+  });
+}
+
+function formatSourceIssueDetails(issues: SourceIssue[]): string | undefined {
+  const detail = issues.map((issue) =>
+    issue.detail ? `${issue.message} (${issue.detail})` : issue.message
+  ).join("; ");
+  return detail || undefined;
 }
 
 async function collectBusinessFeatureFiles(

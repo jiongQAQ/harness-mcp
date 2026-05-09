@@ -19,40 +19,54 @@ export interface FeatureQualityResult {
   warnings: FeatureQualityIssue[];
 }
 
-const REQUIRED_SECTIONS = [
-  "业务来源",
-  "意图",
-  "边界",
-  "待确认",
-] as const;
+export type FeatureLanguage = "zh-CN" | "en";
 
-const SECTION_RE = /^\s*(业务来源|意图|边界|核心承诺|风险|待确认)\s*[：:]\s*$/;
+const LANGUAGE_PROFILES: Record<FeatureLanguage, {
+  languageHeader: string;
+  requiredSections: readonly string[];
+  sectionRe: RegExp;
+  missingSectionMessage: (section: string) => string;
+}> = {
+  "zh-CN": {
+    languageHeader: "zh-CN",
+    requiredSections: ["意图", "边界", "待确认"],
+    sectionRe: /^\s*(业务来源|意图|边界|核心承诺|风险|待确认)\s*[：:]\s*$/,
+    missingSectionMessage: (section) => `缺少业务契约段落: ${section}`,
+  },
+  en: {
+    languageHeader: "en",
+    requiredSections: ["Intent", "Boundaries", "To Confirm"],
+    sectionRe: /^\s*(Intent|Boundaries|To Confirm)\s*:\s*$/,
+    missingSectionMessage: (section) => `Missing business contract section: ${section}`,
+  },
+};
+
 const SCENARIO_RE = /^\s*(?:Scenario|场景|場景|Escenario):\s*.+$/gm;
 const RULE_RE = /^\s*(?:Rule|规则|規則):\s*.+$/gm;
 const ENTRYPOINT_RE = /^#\s*entrypoint:\s*(.+)\s*$/m;
 const THEN_RE = /^\s*(?:Then|And|But|那么|而且|并且|但是)\s+(.+)$/gm;
-const SOURCE_KEYWORDS = ["PRD", "用户提供", "人工确认", "代码推断", "现有测试"];
 const CODE_MODULE_SEGMENT_RE = /\b[A-Z][A-Za-z0-9]*(?:Controller|Service|Handler|Impl)\b/;
-const ZH_CN_LANGUAGE_RE = /^\s*#\s*language:\s*zh-CN\s*$/m;
 const GENERIC_THEN_RE =
-  /(?:应|应该)?(?:返回|响应|请求|接口|调用).{0,8}(?:成功|完整内容|完整的.*内容|200|ok)|状态码.{0,4}200/i;
+  /(?:应|应该)?(?:返回|响应|请求|接口|调用).{0,8}(?:成功|完整内容|完整的.*内容|200|ok)|状态码.{0,4}200|(?:should\s+)?(?:return|respond|request|call).{0,16}(?:success|successful|complete\s+content|200|ok)/i;
 
-export function hasZhCnLanguageHeader(content: string): boolean {
-  return ZH_CN_LANGUAGE_RE.test(content);
+export function hasLanguageHeader(content: string, language: FeatureLanguage): boolean {
+  return new RegExp(`^\\s*#\\s*language:\\s*${escapeRegExp(LANGUAGE_PROFILES[language].languageHeader)}\\s*$`, "m").test(content);
 }
 
 export function checkFeatureQuality(
   content: string,
   fileRel = "",
+  language: FeatureLanguage = "zh-CN",
 ): FeatureQualityResult {
-  const sections = extractSections(content);
+  const profile = LANGUAGE_PROFILES[language];
+  const sections = extractSections(content, profile.sectionRe);
   const issues: FeatureQualityIssue[] = [];
 
-  if (!hasZhCnLanguageHeader(content)) {
+  if (!hasLanguageHeader(content, language)) {
     issues.push({
       id: "feature_quality.language",
       level: "fail",
-      message: "harness feature 默认使用中文,请在文件头加入 # language: zh-CN",
+      message: `当前 harness.yaml language 为 ${language},请在文件头加入 # language: ${profile.languageHeader}`,
       detail: fileRel || undefined,
     });
   }
@@ -66,26 +80,16 @@ export function checkFeatureQuality(
     });
   }
 
-  for (const section of REQUIRED_SECTIONS) {
+  for (const section of profile.requiredSections) {
     const body = sections.get(section);
     if (!body || body.length === 0) {
       issues.push({
         id: "feature_quality.required_sections",
         level: "fail",
-        message: `缺少业务契约段落: ${section}`,
+        message: profile.missingSectionMessage(section),
         detail: fileRel || undefined,
       });
     }
-  }
-
-  const sourceBody = sections.get("业务来源")?.join("\n") ?? "";
-  if (sourceBody && !SOURCE_KEYWORDS.some((keyword) => sourceBody.includes(keyword))) {
-    issues.push({
-      id: "feature_quality.business_source",
-      level: "fail",
-      message: "业务来源必须标明来源类型: PRD / 用户提供 / 人工确认 / 代码推断 / 现有测试",
-      detail: fileRel || undefined,
-    });
   }
 
   if (![...content.matchAll(SCENARIO_RE)].length) {
@@ -103,6 +107,16 @@ export function checkFeatureQuality(
       level: "fail",
       message: "缺少 Rule/规则 分组;请先写业务规则,再写场景例子",
       detail: fileRel || undefined,
+    });
+  }
+
+  const topLevelScenarios = findTopLevelScenarios(content);
+  if (topLevelScenarios.length > 0) {
+    issues.push({
+      id: "feature_quality.scenario_under_rule",
+      level: "fail",
+      message: "Scenario/场景 必须写在 Rule/规则 下面",
+      detail: topLevelScenarios.map((scenario) => `${fileRel || "feature"}:${scenario.line} ${scenario.title}`).join("; "),
     });
   }
 
@@ -143,16 +157,16 @@ export function formatFeatureQualityFailure(
 ): string {
   return [
     `Feature 质量检查失败: ${fileRel}`,
-    ...result.failures.map((issue) => `  - ${issue.message}`),
+    ...result.failures.map((issue) => `  - [${issue.id}] ${issue.message}`),
   ].join("\n");
 }
 
-function extractSections(content: string): Map<string, string[]> {
+function extractSections(content: string, sectionRe: RegExp): Map<string, string[]> {
   const sections = new Map<string, string[]>();
   let current: string | null = null;
 
   for (const line of content.split(/\r?\n/)) {
-    const heading = line.match(SECTION_RE)?.[1] ?? null;
+    const heading = line.match(sectionRe)?.[1] ?? null;
     if (heading) {
       current = heading;
       if (!sections.has(current)) sections.set(current, []);
@@ -161,6 +175,10 @@ function extractSections(content: string): Map<string, string[]> {
 
     if (!current) continue;
     if (/^\s*(?:Scenario|场景|場景|Escenario):/.test(line)) {
+      current = null;
+      continue;
+    }
+    if (/^\s*(?:Rule|规则|規則):/.test(line)) {
       current = null;
       continue;
     }
@@ -177,8 +195,28 @@ function extractSections(content: string): Map<string, string[]> {
   return sections;
 }
 
+function findTopLevelScenarios(content: string): { line: number; title: string }[] {
+  const result: { line: number; title: string }[] = [];
+  let seenRule = false;
+  content.split(/\r?\n/).forEach((line, index) => {
+    if (/^\s*(?:Rule|规则|規則):/.test(line)) {
+      seenRule = true;
+      return;
+    }
+    const scenario = line.match(/^\s*(?:Scenario|场景|場景|Escenario):\s*(.+)$/);
+    if (scenario?.[1] && !seenRule) {
+      result.push({ line: index + 1, title: scenario[1].trim() });
+    }
+  });
+  return result;
+}
+
 function looksLikeCodeModulePath(fileRel: string): boolean {
   return fileRel
     .split("/")
     .some((segment) => CODE_MODULE_SEGMENT_RE.test(segment.replace(/\.feature$/, "")));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

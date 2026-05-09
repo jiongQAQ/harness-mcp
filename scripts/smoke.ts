@@ -83,6 +83,7 @@ const expectedTools = [
   "lint",
   "project_context",
   "read_contract",
+  "read_source",
   "verify",
 ];
 

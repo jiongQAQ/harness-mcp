@@ -16,6 +16,7 @@ export const HELP_TOPICS = [
   "contract",
   "harness-yaml",
   "capability-map",
+  "sources",
   "feature",
   "bdd",
   "lint",
@@ -36,7 +37,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "project_context",
     group: "读上下文",
-    description: "读取项目章程、能力地图、已有业务契约和 AI 使用指引。",
+    description: "读取项目章程、来源索引、能力地图、已有业务契约和 AI 使用指引。",
     useWhen: "AI 准备理解或修改当前项目时先调用。",
     commonArgs: ["path", "raw"],
     example: "project_context({})",
@@ -68,6 +69,15 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
     commonArgs: ["path", "capability", "query", "raw"],
     example: 'read_contract({ "capability": "order.create" })',
     notes: ["只读。"],
+  },
+  {
+    name: "read_source",
+    group: "读上下文",
+    description: "列出、读取或搜索 harness/sources 下的业务来源文档。",
+    useWhen: "AI 需要查看 PRD、人工确认、会议纪要、工单、代码推断等来源全文时。",
+    commonArgs: ["path", "file", "query", "raw"],
+    example: 'read_source({ "file": "sources/2026-05-08-code-inference-order-create.md" })',
+    notes: ["只读。project_context 只列 source 索引,需要全文时再调用 read_source。"],
   },
   {
     name: "verify",

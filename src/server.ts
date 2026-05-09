@@ -9,6 +9,7 @@ import { DiscoverInputSchema, executeDiscover } from "./tools/discover.ts";
 import { HelpInputSchema, executeHelp } from "./tools/help.ts";
 import { LintInputSchema, executeLint } from "./tools/lint.ts";
 import { ReadInputSchema, executeRead } from "./tools/read.ts";
+import { ReadSourceInputSchema, executeReadSource } from "./tools/read_source.ts";
 import { VerifyInputSchema, executeVerify } from "./tools/verify.ts";
 import { toolDescription } from "./tool_catalog.ts";
 
@@ -28,16 +29,19 @@ export function createServer() {
       "",
       "若不知道怎么开始 → guide(),再 project_context()。",
       "若用户问当前项目业务契约 → project_context()/read_contract()。",
+      "若用户要查看 PRD、人工确认、代码推断等来源全文 → read_source()。",
       "若用户要新增/补充业务 feature → discover(),不要直接 contract。",
       "若用户担心 AI 写烂代码 → 配置 harness/lint/rules.yaml 或 commands.lint 后运行 lint(),不要用 check 代替代码质量门禁。",
       "",
       "── Feature 文件协议(所有项目硬性遵守) ──",
-      "  • 所有新建/修改的 harness .feature 文件默认中文,必须写 # language: zh-CN",
+      "  • 所有新建/修改的 harness .feature 文件按 harness.yaml language 校验;缺省 zh-CN,也可配置 en",
       "  • 头部必须有元数据注释:",
       "      # capability: <业务域>.<能力名>",
       "      # entrypoint: <业务入口方法或 planned:业务入口>",
-      "  • 必须包含: 业务来源 / 意图 / 边界 / 待确认",
-      "  • 必须先写 Rule/规则,再写场景;Then 必须是可验证业务结果",
+      "  • 中文 feature 必须包含: 意图 / 边界 / 待确认;英文 feature 必须包含: Intent / Boundaries / To Confirm",
+      "  • 必须先写 Rule/规则,再写 Scenario/场景;禁止顶层 Scenario/场景",
+      "  • 每个 Rule/规则 必须有固定 # sources: 注释块;若单个场景来源不同,可在 Scenario/场景 下覆盖",
+      "  • # sources: 只允许 current 和 timeline;current 必须在 timeline 中,路径必须指向 harness/sources/YYYY-MM-DD-xxx.md",
       "  • 禁止只写“接口成功 / 返回完整内容 / 状态码 200”这类浅断言",
       "",
       "── 自审触发协议(不要混用) ──",
@@ -51,8 +55,9 @@ export function createServer() {
       "── 目录组织 ──",
       "  • harness.yaml 推荐固定 spec_dir: harness,不要让 AI 自己发明 harness/specs 这类目录",
       "  • 全局章程 → charter_dir 下的 Markdown 文件,例如 architecture.md / conventions.md / project-constraints.md",
+      "  • 业务来源 → spec_dir/sources/YYYY-MM-DD-xxx.md,可来自 PRD、人工确认、会议、工单、代码推断或现有测试",
       "  • 业务能力 → spec_dir/features/<业务域>/<业务动作>.feature,不要直接放在 harness/<业务域>",
-      "  • charter 不写 Gherkin;constraints / flows 使用 .feature 并加 # language: zh-CN",
+      "  • charter 不写 Gherkin;constraints / flows 使用 .feature 并加匹配 harness.yaml language 的 # language",
       "  • BDD step definitions、runner config、测试代码和报告不写进 spec_dir/harness;它们属于宿主项目 test/build 输出",
       "  • BDD 执行代码推荐 tests-or-src-test/contract/bdd/{runner,config,steps,support}",
       "  • runner 默认一个 suite 一个;steps 按业务域分目录;client/fixture/cleaner/helper 放 support",
@@ -94,6 +99,13 @@ export function createServer() {
     description: toolDescription("read_contract"),
     parameters: ReadInputSchema,
     execute: async (input) => executeRead(input),
+  });
+
+  server.addTool({
+    name: "read_source",
+    description: toolDescription("read_source"),
+    parameters: ReadSourceInputSchema,
+    execute: async (input) => executeReadSource(input),
   });
 
   server.addTool({

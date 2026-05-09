@@ -9,11 +9,25 @@ import { executeContract } from "../src/tools/contract.ts";
 
 const tmpRoot = await mkdtemp(`${tmpdir()}/harness-mcp-contract-`);
 await mkdir(resolve(tmpRoot, "harness"), { recursive: true });
+await mkdir(resolve(tmpRoot, "harness/sources"), { recursive: true });
 await Bun.write(
   resolve(tmpRoot, "harness.yaml"),
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+`,
+);
+await Bun.write(
+  resolve(tmpRoot, "harness/sources/2026-05-08-code-inference-order-create.md"),
+  `# 创建订单规则代码推断
+
+## 有库存商品可以创建订单
+
+从 OrderService#create 推断有库存时创建订单。
+
+## 创建订单时锁定库存
+
+从 InventoryService#reserve 推断订单创建后锁定库存。
 `,
 );
 
@@ -44,10 +58,6 @@ const validFeature = `# language: zh-CN
 
 功能: 创建订单
 
-  业务来源:
-    - 代码推断: OrderController#create
-    - 人工确认: 订单创建和库存锁定规则
-
   意图:
     - 客户提交有效购买请求后,系统创建待支付订单并锁定库存。
 
@@ -58,6 +68,10 @@ const validFeature = `# language: zh-CN
     - 库存预占超时时间由其他能力定义。
 
   规则: 有库存商品可以创建订单
+    # sources:
+    #   current: sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单
+    #   timeline:
+    #     - sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单
 
     场景: 客户购买有库存商品
       假设 客户已登录
@@ -72,6 +86,10 @@ const validFeature = `# language: zh-CN
       那么 应拒绝创建订单
 
   规则: 创建订单时锁定库存
+    # sources:
+    #   current: sources/2026-05-08-code-inference-order-create.md#创建订单时锁定库存
+    #   timeline:
+    #     - sources/2026-05-08-code-inference-order-create.md#创建订单时锁定库存
 
     场景: 订单创建成功后库存被锁定
       假设 商品 "sku-003" 可售库存为 3

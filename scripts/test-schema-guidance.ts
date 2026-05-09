@@ -60,9 +60,6 @@ const validFeature = `# language: zh-CN
 
 功能: 智能学习答题
 
-  业务来源:
-    - 代码推断: AnswerUserApiService.start
-
   意图:
     - 学生开始练习后,系统创建练习会话并返回第一题。
 
@@ -73,6 +70,10 @@ const validFeature = `# language: zh-CN
     - 无
 
   规则: 学生可以开始练习
+    # sources:
+    #   current: sources/2026-05-08-code-inference-practice.md#学生可以开始练习
+    #   timeline:
+    #     - sources/2026-05-08-code-inference-practice.md#学生可以开始练习
 
     场景: 学生开始有效练习
       假设 学生已登录
@@ -144,6 +145,7 @@ assert(noConfigLint.includes("正确格式"), "lint no-config should include har
 const tmpRoot = await mkdtemp(`${tmpdir()}/harness-mcp-schema-guidance-`);
 await mkdir(resolve(tmpRoot, "harness/features/ailearning"), { recursive: true });
 await mkdir(resolve(tmpRoot, "harness/flows"), { recursive: true });
+await mkdir(resolve(tmpRoot, "harness/sources"), { recursive: true });
 await writeFile(
   resolve(tmpRoot, "harness.yaml"),
   `version: 1
@@ -160,6 +162,15 @@ bdd:
 `,
 );
 await writeFile(resolve(tmpRoot, "harness/capability-map.yaml"), invalidFlatMap);
+await writeFile(
+  resolve(tmpRoot, "harness/sources/2026-05-08-code-inference-practice.md"),
+  `# 智能学习答题代码推断
+
+## 学生可以开始练习
+
+从 AnswerUserApiService.start 推断学生开始练习后创建练习会话。
+`,
+);
 await writeFile(resolve(tmpRoot, "harness/features/ailearning/practice.feature"), validFeature);
 await writeFile(resolve(tmpRoot, "harness/flows/practice.feature"), flowFeature);
 
