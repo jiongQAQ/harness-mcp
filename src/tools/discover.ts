@@ -38,6 +38,12 @@ const GENERIC_BUSINESS_RE =
 const BUSINESS_DEPTH_RE =
   /权限|角色|状态|发布|下架|删除|软删除|过滤|排序|顺序|隐藏|答案|解析|副作用|记录|进度|事件|日志|拒绝|不存在|无权限|异常|失败|边界|默认|兜底|范围|学段|班级/;
 const NEGATIVE_EXAMPLE_RE = /拒绝|不存在|无权限|未发布|下架|删除|软删除|失败|异常|边界|空|隐藏|不得|不能/;
+const STATE_CHANGE_RE =
+  /状态|流转|待支付|已支付|已取消|已完成|进行中|已结束|IN_PROGRESS|PENDING|CANCELLED|COMPLETED|库存.{0,8}(?:减少|增加|不变|锁定|释放)|(?:创建|更新|修改|删除|保存).{0,12}(?:记录|会话|订单|任务|进度|状态|快照)/i;
+const SIDE_EFFECT_RE =
+  /副作用|记录|日志|事件|消息|通知|缓存|索引|库存|锁定|释放|保存|写入|上报|发送|创建任务|不创建|不写入|不变化|不应变化|不触发/;
+const BOUNDARY_RE =
+  /只(?:负责|定义)|不(?:负责|定义|包含)|边界|不处理|不覆盖|由其他|范围/;
 
 export async function executeDiscover(input: DiscoverInput): Promise<string> {
   const checks = analyzeDiscovery(input);
@@ -100,6 +106,35 @@ function analyzeDiscovery(input: DiscoverInput): DiscoveryCheck[] {
         ? "业务规则包含可验证业务逻辑"
         : "业务规则过浅:不能只写 API/接口成功,必须包含权限、状态、过滤、字段隐藏、副作用或异常分支等业务规则",
     detail: input.business_rules.join("; ") || undefined,
+  });
+
+  const hasStateChange = input.business_rules.some((rule) => STATE_CHANGE_RE.test(rule));
+  checks.push({
+    id: "discovery.rules.state_change",
+    level: hasStateChange ? "pass" : "fail",
+    message: hasStateChange
+      ? "已说明状态变化或持久化对象变化"
+      : "缺少状态变化:请说明会创建/修改什么对象、进入什么状态,或哪些状态保持不变",
+    detail: input.business_rules.join("; ") || undefined,
+  });
+
+  const hasSideEffect = input.business_rules.some((rule) => SIDE_EFFECT_RE.test(rule));
+  checks.push({
+    id: "discovery.rules.side_effects",
+    level: hasSideEffect ? "pass" : "fail",
+    message: hasSideEffect
+      ? "已说明副作用或无副作用保障"
+      : "缺少副作用说明:请说明库存、记录、消息、缓存、任务、日志等变化;没有副作用也要显式写明",
+    detail: input.business_rules.join("; ") || undefined,
+  });
+
+  const hasBoundary = input.business_rules.some((rule) => BOUNDARY_RE.test(rule)) || input.questions.length > 0;
+  checks.push({
+    id: "discovery.boundaries",
+    level: hasBoundary ? "pass" : "warn",
+    message: hasBoundary
+      ? "已显式说明边界或待确认问题"
+      : "建议说明本能力不覆盖什么,避免 AI 把相邻能力一起写进 feature",
   });
 
   const meaningfulExamples = input.examples.filter((example) => !GENERIC_BUSINESS_RE.test(example));

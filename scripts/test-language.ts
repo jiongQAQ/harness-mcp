@@ -19,15 +19,15 @@ const mapContent = `version: 1
 domains:
   order:
     capabilities:
-      - id: order.create
-        file: features/order/create.feature
+      - id: api.order.create
+        file: features/api/order/create.feature
         entrypoint: OrderController#create
         intent: Create order and reserve inventory
 flows: []
 `;
 
 const englishFeature = `# language: en
-# capability: order.create
+# capability: api.order.create
 # entrypoint: OrderController#create
 @order @create
 
@@ -63,6 +63,8 @@ await writeFile(
 spec_dir: harness
 charter_dir: harness/_charter
 language: en
+targets:
+  - api
 `,
 );
 await writeFile(
@@ -78,8 +80,8 @@ OrderController#create creates an unpaid order when inventory is available.
 const englishRaw = await executeContract({
   path: englishRoot,
   kind: "capability",
-  id: "order.create",
-  file: "features/order/create.feature",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
   content: englishFeature,
   map_content: mapContent,
   raw: true,
@@ -95,6 +97,8 @@ await writeFile(
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
 `,
 );
 await writeFile(
@@ -106,8 +110,8 @@ await writeFile(
 const defaultResult = await executeContract({
   path: defaultChineseRoot,
   kind: "capability",
-  id: "order.create",
-  file: "features/order/create.feature",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
   content: englishFeature,
   map_content: mapContent,
 });

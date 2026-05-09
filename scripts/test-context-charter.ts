@@ -17,6 +17,8 @@ await writeFile(
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
 `,
 );
 await writeFile(

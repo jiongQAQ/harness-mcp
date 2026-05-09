@@ -42,16 +42,42 @@ const CommandsSchema = z.object({
 }).strict();
 
 const LanguageSchema = z.enum(["zh-CN", "en"]);
+const TargetNameSchema = z.string().regex(/^[a-z0-9_-]+$/, "target 只能包含小写字母、数字、短横线或下划线");
+
+const WorkspaceSchema = z.object({
+  target: TargetNameSchema,
+}).strict();
 
 export const ConfigSchema = z.object({
   version: z.literal(1),
   spec_dir: z.string().default("harness"),
   charter_dir: z.string().optional(),
   language: LanguageSchema.optional().default("zh-CN"),
+  targets: z.array(TargetNameSchema).min(1, "targets 至少声明一个验证目标"),
+  workspace: WorkspaceSchema.optional(),
   bdd: BddSchema.optional(),
   commands: CommandsSchema.optional(),
   ai_hints: z.string().optional(),
-}).strict();
+}).strict().superRefine((config, ctx) => {
+  const seen = new Set<string>();
+  for (const target of config.targets) {
+    if (seen.has(target)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["targets"],
+        message: `重复 target: ${target}`,
+      });
+    }
+    seen.add(target);
+  }
+  if (config.workspace && !seen.has(config.workspace.target)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["workspace", "target"],
+      message: `workspace.target ${config.workspace.target} 必须在 targets 中声明`,
+    });
+  }
+});
 
 export type HarnessConfig = z.infer<typeof ConfigSchema>;
 
@@ -59,6 +85,13 @@ export const HARNESS_CONFIG_EXAMPLE = `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
 language: zh-CN
+targets:
+  - api
+  - web
+  - e2e
+
+workspace:
+  target: api
 
 bdd:
   runner: custom
@@ -86,6 +119,8 @@ export const HARNESS_CONFIG_SCHEMA_HELP = [
   "  - spec_dir",
   "  - charter_dir",
   "  - language",
+  "  - targets",
+  "  - workspace",
   "  - bdd",
   "  - commands",
   "  - ai_hints",
@@ -93,6 +128,8 @@ export const HARNESS_CONFIG_SCHEMA_HELP = [
   "说明:",
   "  - 将 your-bdd-command 和 your-lint-command 替换为宿主项目真实命令",
   "  - language 可选 zh-CN 或 en;缺省为 zh-CN",
+  "  - targets 是项目允许的验证目标,例如 api/web/mobile/thirdparty/e2e",
+  "  - workspace.target 可选,用于限制当前工作区只能写某个 target",
   "",
   "Next action:",
   "  1. 修正 harness.yaml",

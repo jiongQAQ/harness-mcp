@@ -54,7 +54,7 @@ export async function executeVerify(input: VerifyInput): Promise<string> {
 
   const targetType = input.target_type ?? "capability";
   const targets = targetType === "flow"
-    ? await resolveFlowTargets(loaded.projectRoot, loaded.specDirAbs, input.target)
+    ? await resolveFlowTargets(loaded.projectRoot, loaded.specDirAbs, loaded.config.targets, input.target)
     : await resolveCapabilityTargets(loaded.projectRoot, loaded.specDirAbs, loaded.charterDirAbs, input.target);
   if (typeof targets === "string") return targets;
   if (targets.length === 0) return "未找到可验证的 feature。";
@@ -169,12 +169,13 @@ async function resolveCapabilityTargets(
 async function resolveFlowTargets(
   projectRoot: string,
   specDirAbs: string,
+  targets: readonly string[],
   target?: string,
 ): Promise<BddTarget[] | string> {
-  const map = await loadCapabilityMap(specDirAbs);
+  const map = await loadCapabilityMap(specDirAbs, targets);
   if (map.exists && !map.ok) return map.error;
 
-  const flows = await discoverFlows(projectRoot, specDirAbs);
+  const flows = await discoverFlows(projectRoot, specDirAbs, targets);
   if (!target) return "verify flow 需要 target,例如 verify({ target_type: \"flow\", target: \"下单\" })";
   const q = target.toLowerCase().trim();
   const exactIdMatched = flows.filter((flow) => flow.id?.toLowerCase() === q);
@@ -205,10 +206,10 @@ async function resolveFlowTargets(
   }];
 }
 
-async function discoverFlows(projectRoot: string, specDirAbs: string): Promise<FlowSpec[]> {
+async function discoverFlows(projectRoot: string, specDirAbs: string, targets: readonly string[]): Promise<FlowSpec[]> {
   const flowDirAbs = resolve(specDirAbs, "flows");
   if (!existsSync(flowDirAbs)) return [];
-  const map = await loadCapabilityMap(specDirAbs);
+  const map = await loadCapabilityMap(specDirAbs, targets);
   const flowIdByFile = new Map<string, string>();
   if (map.exists && map.ok) {
     for (const flow of map.flows) {

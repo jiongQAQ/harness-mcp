@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { executeVerify } from "../src/tools/verify.ts";
 
 const tmpRoot = await mkdtemp(`${tmpdir()}/harness-mcp-verify-`);
-await mkdir(resolve(tmpRoot, "harness/features/order"), { recursive: true });
+await mkdir(resolve(tmpRoot, "harness/features/api/order"), { recursive: true });
 await mkdir(resolve(tmpRoot, "target"), { recursive: true });
 
 await writeFile(
@@ -16,6 +16,9 @@ await writeFile(
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
+  - e2e
 bdd:
   runner: custom
   cmd: 'true'
@@ -28,9 +31,9 @@ bdd:
 );
 
 await writeFile(
-  resolve(tmpRoot, "harness/features/order/create.feature"),
+  resolve(tmpRoot, "harness/features/api/order/create.feature"),
   `# language: zh-CN
-# capability: order.create
+# capability: api.order.create
 # entrypoint: OrderController#create
 @order
 功能: 创建订单
@@ -55,26 +58,26 @@ await writeFile(
       那么 应创建一笔待支付订单
 `,
 );
-await mkdir(resolve(tmpRoot, "harness/flows"), { recursive: true });
+await mkdir(resolve(tmpRoot, "harness/flows/e2e/order"), { recursive: true });
 await writeFile(
   resolve(tmpRoot, "harness/capability-map.yaml"),
   `version: 1
 domains:
   order:
     capabilities:
-      - id: order.create
-        file: features/order/create.feature
+      - id: api.order.create
+        file: features/api/order/create.feature
         entrypoint: OrderController#create
         intent: 创建订单
 flows:
-  - id: order.customerPurchase
-    file: flows/customer-purchase.feature
+  - id: e2e.order.customerPurchase
+    file: flows/e2e/order/customer-purchase.feature
     uses:
-      - order.create
+      - api.order.create
 `,
 );
 await writeFile(
-  resolve(tmpRoot, "harness/flows/customer-purchase.feature"),
+  resolve(tmpRoot, "harness/flows/e2e/order/customer-purchase.feature"),
   `# language: zh-CN
 @flow
 功能: 客户购买旅程
@@ -88,7 +91,7 @@ await writeFile(
 
 const passedReport = JSON.stringify([
   {
-    uri: "harness/features/order/create.feature",
+    uri: "harness/features/api/order/create.feature",
     name: "创建订单",
     elements: [
       {
@@ -112,7 +115,7 @@ const assert = (ok: boolean, message: string) => {
 const staleRaw = await executeVerify({
   path: tmpRoot,
   target_type: "capability",
-  target: "order.create",
+  target: "api.order.create",
   raw: true,
 });
 const stale = JSON.parse(staleRaw);
@@ -126,7 +129,7 @@ await writeFile(
   skippedReportPath,
   JSON.stringify([
     {
-      uri: "harness/features/order/create.feature",
+      uri: "harness/features/api/order/create.feature",
       name: "创建订单",
       elements: [
         {
@@ -144,6 +147,9 @@ await writeFile(
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
+  - e2e
 bdd:
   runner: custom
   cmd: 'cp "$REPORT_SRC"'
@@ -158,7 +164,7 @@ process.env.REPORT_SRC = skippedReportPath;
 const skippedRaw = await executeVerify({
   path: tmpRoot,
   target_type: "capability",
-  target: "order.create",
+  target: "api.order.create",
   raw: true,
 });
 const skipped = JSON.parse(skippedRaw);
@@ -171,15 +177,15 @@ assert(skipped.next_required_action === null, "skipped scenario should not requi
 const flowDryRunRaw = await executeVerify({
   path: tmpRoot,
   target_type: "flow",
-  target: "order.customerPurchase",
+  target: "e2e.order.customerPurchase",
   dryRun: true,
   raw: true,
 });
 const flowDryRun = JSON.parse(flowDryRunRaw);
 console.log("=== flow by id dry run ===\n" + flowDryRunRaw + "\n");
-assert(flowDryRun.targets?.[0]?.name === "order.customerPurchase", "flow target should resolve by capability-map id");
+assert(flowDryRun.targets?.[0]?.name === "e2e.order.customerPurchase", "flow target should resolve by capability-map id");
 assert(
-  String(flowDryRun.targets?.[0]?.file).endsWith("harness/flows/customer-purchase.feature"),
+  String(flowDryRun.targets?.[0]?.file).endsWith("harness/flows/e2e/order/customer-purchase.feature"),
   "flow target should use map file",
 );
 

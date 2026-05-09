@@ -8,12 +8,15 @@ import { resolve } from "node:path";
 import { executeCheck } from "../src/tools/check.ts";
 
 const tmpRoot = await mkdtemp(`${tmpdir()}/harness-mcp-check-`);
-await mkdir(resolve(tmpRoot, "harness/features/order"), { recursive: true });
+await mkdir(resolve(tmpRoot, "harness/features/api/order"), { recursive: true });
 await writeFile(
   resolve(tmpRoot, "harness.yaml"),
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
+  - e2e
 `,
 );
 await writeFile(
@@ -22,25 +25,25 @@ await writeFile(
 domains:
   order:
     capabilities:
-      - id: order.create
-        file: features/order/create.feature
+      - id: api.order.create
+        file: features/api/order/create.feature
         entrypoint: OrderController#create
         intent: 创建订单
-      - id: order.missingCapability
-        file: features/order/missing-capability.feature
+      - id: api.order.missingCapability
+        file: features/api/order/missing-capability.feature
         entrypoint: OrderController#missing
         intent: 验证缺少 capability 头会失败
 flows:
-  - id: order.customerPurchase
-    file: flows/customer-purchase.feature
+  - id: e2e.order.customerPurchase
+    file: flows/e2e/order/customer-purchase.feature
     uses:
-      - order.create
+      - api.order.create
 `,
 );
 await writeFile(
-  resolve(tmpRoot, "harness/features/order/create.feature"),
+  resolve(tmpRoot, "harness/features/api/order/create.feature"),
   `# language: zh-CN
-# capability: order.create
+# capability: api.order.create
 # entrypoint: OrderController#create
 @order
 功能: 创建订单
@@ -64,7 +67,7 @@ await writeFile(
 `,
 );
 await writeFile(
-  resolve(tmpRoot, "harness/features/order/missing-capability.feature"),
+  resolve(tmpRoot, "harness/features/api/order/missing-capability.feature"),
   `功能: 缺少能力头的 Feature
 
   场景: 没有稳定能力 id

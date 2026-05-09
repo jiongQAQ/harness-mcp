@@ -46,7 +46,7 @@ export async function executeRead(input: ReadInput): Promise<string> {
   }
 
   const caps = await discoverCapabilities(loaded.projectRoot, loaded.specDirAbs, loaded.charterDirAbs);
-  const map = await loadCapabilityMap(loaded.specDirAbs);
+  const map = await loadCapabilityMap(loaded.specDirAbs, loaded.config.targets);
   const payload = {
     project_root: loaded.projectRoot,
     capability_map:

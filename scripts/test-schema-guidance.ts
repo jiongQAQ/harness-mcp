@@ -25,7 +25,7 @@ const assert = (ok: boolean, message: string) => {
 
 const invalidFlatMap = `version: 1
 ailearning.practice:
-  file: features/ailearning/practice.feature
+  file: features/api/ailearning/practice.feature
   entrypoint: AnswerUserApiService.start
   intent: 智能学习答题
 `;
@@ -33,7 +33,7 @@ ailearning.practice:
 const invalidCapabilitiesMap = `version: 1
 capabilities:
   ailearning.practice:
-    file: features/ailearning/practice.feature
+    file: features/api/ailearning/practice.feature
     entrypoint: AnswerUserApiService.start
     intent: 智能学习答题
 `;
@@ -42,19 +42,19 @@ const validMap = `version: 1
 domains:
   ailearning:
     capabilities:
-      - id: ailearning.practice
-        file: features/ailearning/practice.feature
+      - id: api.ailearning.practice
+        file: features/api/ailearning/practice.feature
         entrypoint: AnswerUserApiService.start
         intent: 智能学习答题
 flows:
-  - id: ailearning.practiceFlow
-    file: flows/practice.feature
+  - id: e2e.ailearning.practiceFlow
+    file: flows/e2e/ailearning/practice.feature
     uses:
-      - ailearning.practice
+      - api.ailearning.practice
 `;
 
 const validFeature = `# language: zh-CN
-# capability: ailearning.practice
+# capability: api.ailearning.practice
 # entrypoint: AnswerUserApiService.start
 @ailearning @practice
 
@@ -143,14 +143,17 @@ console.log("=== no config lint ===\n" + noConfigLint + "\n");
 assert(noConfigLint.includes("正确格式"), "lint no-config should include harness.yaml schema guidance");
 
 const tmpRoot = await mkdtemp(`${tmpdir()}/harness-mcp-schema-guidance-`);
-await mkdir(resolve(tmpRoot, "harness/features/ailearning"), { recursive: true });
-await mkdir(resolve(tmpRoot, "harness/flows"), { recursive: true });
+await mkdir(resolve(tmpRoot, "harness/features/api/ailearning"), { recursive: true });
+await mkdir(resolve(tmpRoot, "harness/flows/e2e/ailearning"), { recursive: true });
 await mkdir(resolve(tmpRoot, "harness/sources"), { recursive: true });
 await writeFile(
   resolve(tmpRoot, "harness.yaml"),
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
+  - e2e
 bdd:
   runner: custom
   cmd: "true {feature}"
@@ -171,8 +174,8 @@ await writeFile(
 从 AnswerUserApiService.start 推断学生开始练习后创建练习会话。
 `,
 );
-await writeFile(resolve(tmpRoot, "harness/features/ailearning/practice.feature"), validFeature);
-await writeFile(resolve(tmpRoot, "harness/flows/practice.feature"), flowFeature);
+await writeFile(resolve(tmpRoot, "harness/features/api/ailearning/practice.feature"), validFeature);
+await writeFile(resolve(tmpRoot, "harness/flows/e2e/ailearning/practice.feature"), flowFeature);
 
 const contextText = await executeContext({ path: tmpRoot });
 console.log("=== project_context invalid map ===\n" + contextText + "\n");
@@ -192,7 +195,7 @@ assert(readText.includes("Next action"), "read_contract should include repair ac
 const verifyText = await executeVerify({
   path: tmpRoot,
   target_type: "flow",
-  target: "ailearning.practiceFlow",
+  target: "e2e.ailearning.practiceFlow",
   dryRun: true,
 });
 console.log("=== verify invalid map flow id ===\n" + verifyText + "\n");
@@ -202,8 +205,8 @@ assert(verifyText.includes("Next action"), "verify flow by id should include rep
 const repairedRaw = await executeContract({
   path: tmpRoot,
   kind: "capability",
-  id: "ailearning.practice",
-  file: "features/ailearning/practice.feature",
+  id: "api.ailearning.practice",
+  file: "features/api/ailearning/practice.feature",
   content: validFeature,
   map_content: validMap,
   raw: true,
@@ -224,6 +227,8 @@ await writeFile(
   resolve(invalidConfigRoot, "harness.yaml"),
   `version: 1
 spec_dir: harness
+targets:
+  - api
 unknown_key: true
 `,
 );

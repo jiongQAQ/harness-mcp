@@ -61,6 +61,7 @@ export async function executeCheck(input: CheckInput): Promise<string> {
     loaded.specDirAbs,
     loaded.charterDirAbs,
     loaded.config.language,
+    loaded.config.targets,
   );
   const staticStatus = summarizeStaticStatus(staticChecks);
   const constraints = await discoverConstraints(
@@ -184,6 +185,7 @@ async function collectStaticChecks(
   specDirAbs: string,
   charterDirAbs: string,
   language: "zh-CN" | "en",
+  targets: readonly string[],
 ): Promise<StaticCheck[]> {
   const checks: StaticCheck[] = [];
   const features = await collectBusinessFeatureFiles(projectRoot, specDirAbs);
@@ -220,10 +222,10 @@ async function collectStaticChecks(
     });
   }
 
-  checks.push(...await collectFeatureLayoutChecks(projectRoot, specDirAbs));
+  checks.push(...await collectFeatureLayoutChecks(projectRoot, specDirAbs, targets));
   checks.push(...await collectSourceTraceChecks(projectRoot, specDirAbs, features));
   checks.push(...await collectCharterFormatChecks(projectRoot, charterDirAbs));
-  checks.push(...await collectMapAlignmentChecks(projectRoot, specDirAbs, features));
+  checks.push(...await collectMapAlignmentChecks(projectRoot, specDirAbs, features, targets));
   checks.push(...await collectHarnessBddImplementationChecks(projectRoot, specDirAbs));
   return checks;
 }
@@ -289,17 +291,35 @@ async function collectBusinessFeatureFiles(
 async function collectFeatureLayoutChecks(
   projectRoot: string,
   specDirAbs: string,
+  targets: readonly string[],
 ): Promise<StaticCheck[]> {
   if (!existsSync(specDirAbs)) return [];
   const glob = new Glob("**/*.feature");
   const issues: string[] = [];
+  const targetSet = new Set(targets);
   for await (const rel of glob.scan({ cwd: specDirAbs, onlyFiles: true })) {
     const normalized = rel.replace(/\\/g, "/");
-    const [top] = normalized.split("/");
-    if (!top || top === "features" || top === "flows" || top === "constraints" || top.startsWith("_")) {
+    const segments = normalized.split("/");
+    const [top] = segments;
+    if (!top) continue;
+    if (top.startsWith("_") || top === "constraints") {
       continue;
     }
-    issues.push(relative(projectRoot, resolve(specDirAbs, rel)));
+    if (top === "features") {
+      const target = segments[1];
+      if (segments.length < 4 || !target || !targetSet.has(target)) {
+        issues.push(`${relative(projectRoot, resolve(specDirAbs, rel))}: feature 必须位于 features/<target>/<domain>/`);
+      }
+      continue;
+    }
+    if (top === "flows") {
+      const target = segments[1];
+      if (segments.length < 4 || !target || !targetSet.has(target)) {
+        issues.push(`${relative(projectRoot, resolve(specDirAbs, rel))}: flow 必须位于 flows/<target>/<domain>/`);
+      }
+      continue;
+    }
+    issues.push(`${relative(projectRoot, resolve(specDirAbs, rel))}: .feature 必须位于 features/<target>/<domain>/、flows/<target>/<domain>/ 或 constraints/`);
   }
 
   return [{
@@ -342,8 +362,9 @@ async function collectMapAlignmentChecks(
   projectRoot: string,
   specDirAbs: string,
   features: { fileRel: string; specRel: string; content: string }[],
+  targets: readonly string[],
 ): Promise<StaticCheck[]> {
-  const map = await loadCapabilityMap(specDirAbs);
+  const map = await loadCapabilityMap(specDirAbs, targets);
   if (!map.exists) {
     return [{ id: "capability_map.exists", level: "warn", message: "capability-map.yaml is missing" }];
   }

@@ -1,39 +1,81 @@
 # harness-mcp
 
-`harness-mcp` 是面向 AI 辅助开发的业务契约 MCP Server。它把项目规则、业务能力、BDD 验证和治理检查整理成一组稳定工具，让不同模型按同一套业务边界工作。
+`harness-mcp` 是面向 AI 协作开发的业务契约治理层。它让 AI 在写代码前先讲清业务依据，交付前再用来源、契约、BDD 报告和治理检查证明没有偏离业务。
 
-它不内置测试框架，也不管理 step definitions。宿主项目继续使用自己的 Cucumber、Playwright、JUnit、pytest 等测试体系；`harness-mcp` 只负责帮助 AI 梳理业务、写入契约、调用项目配置的验证命令，并检查报告是否真正覆盖目标场景。
+它不是测试框架，也不接管 step definitions。宿主项目继续使用自己的 Cucumber、Playwright、JUnit、pytest 等测试体系；`harness-mcp` 只负责业务契约、验证调度和交付治理。
 
-## 核心目标
+## 它解决什么问题
 
-- 让 AI 先理解业务能力，再修改代码。
-- 让新需求从 PRD/人工描述沉淀为可审查的 `.feature` 契约。
-- 让每条业务规则能追溯到 PRD、人工确认、代码推断等来源文档。
-- 让已有代码可以反向梳理入口方法、调用链、规则和示例。
-- 让 BDD 通过不只是“命令成功”，而是报告覆盖目标 feature/scenario 且没有 skipped/pending/undefined。
-- 让多模型协作时使用统一的能力划分规则。
+- 需求散落在 PRD、会议、聊天和代码里，AI 不知道哪个才是业务事实。
+- AI 容易跳过业务梳理直接改代码，最后“能跑但业务错”。
+- 旧项目业务逻辑藏在 Controller、Service、SQL 和测试里，缺少可审查的业务说明。
+- BDD 容易只证明接口能调通，不能证明业务规则被保护。
+- 前端、后端、第三方服务、E2E 各自命名，同一个业务能力对不齐。
+- 需求变更后，很难知道影响了哪些能力、规则、场景和测试。
 
-## 工具
+## 最短路径
+
+第一次接入：
+
+```text
+guide({ "topic": "new-project" })
+init({ "mode": "new", "targets": ["api", "web", "e2e"] })
+project_context({})
+```
+
+旧项目补契约：
+
+```text
+guide({ "topic": "legacy-project" })
+init({ "mode": "legacy", "targets": ["api"] })
+project_context({})
+discover({ ... })
+```
+
+新增或修改业务：
+
+```text
+read_source/read_contract -> discover -> 人工确认 -> contract -> verify -> lint -> check
+```
+
+完整链路：
+
+```text
+init -> project_context -> discover -> 人工确认 -> contract -> Feature Contract Review -> 写测试和实现 -> verify -> Step Evidence Review -> lint -> check
+```
+
+工具边界：
 
 | 工具 | 作用 |
 |---|---|
-| `guide` | 查看推荐工作流、目录约定和自审要求；不读取项目 |
-| `project_context` | 读取项目章程、能力索引和 AI 提示 |
-| `discover` | 把 PRD/代码阅读结果整理成业务发现包，不写文件 |
-| `contract` | 校验并写入 `capability-map.yaml` 和 `.feature` 契约 |
-| `read_contract` | 列出、读取或搜索业务契约 |
-| `read_source` | 列出、读取或搜索业务来源文档 |
-| `verify` | 按 `bdd` 配置运行 capability/flow，并校验报告覆盖 |
-| `lint` | 执行 `harness/lint/rules.yaml` 和宿主项目 lint 命令 |
-| `check` | 执行治理检查和内置静态检查 |
+| `guide` | 按任务场景告诉 AI 下一步怎么做；不读取项目 |
+| `init` | 创建最小 harness 骨架；不生成业务 feature |
+| `project_context` | 读取章程、来源索引、能力地图、已有契约和 AI 指引 |
+| `discover` | 检查 AI 是否讲清业务入口、调用链、状态变化、副作用、例子和证据 |
+| `contract` | 写入 `capability-map.yaml` 和 `.feature` 契约 |
+| `verify` | 运行 BDD，并确认 report 覆盖目标 feature/scenario |
+| `lint` | 执行项目自定义代码质量规则和宿主项目 lint 命令 |
+| `check` | 只检查 harness 契约治理，不替代代码 lint |
 
-推荐流程：
+## 什么时候用哪个 guide
+
+格式不确定时不要猜，先查 `guide`：
+
+- `guide({ "topic": "new-project" })`
+- `guide({ "topic": "legacy-project" })`
+- `guide({ "topic": "new-feature" })`
+- `guide({ "topic": "change-feature" })`
+- `guide({ "topic": "frontend-backend-e2e" })`
+- `guide({ "topic": "verify-failed" })`
+- `guide({ "topic": "capability-map" })`
+- `guide({ "topic": "harness-yaml" })`
+
+如果 `capability-map.yaml` 报 schema 错，不要一个格式一个格式试。正确做法是：
 
 ```text
-project_context -> discover -> 人工确认 -> contract -> Feature Contract Review -> 写 tests/steps 与实现 -> verify -> Step Evidence Review -> lint -> check
+guide({ "topic": "capability-map" })
+contract({ ..., "map_content": "<完整正确 YAML>" })
 ```
-
-格式不确定时先查 `guide`，常用主题包括 `harness-yaml`、`capability-map`、`sources`、`contract`、`bdd`、`lint`、`agent-skills` 和 `check`。
 
 ## 项目结构
 
@@ -52,10 +94,13 @@ your-project/
     │   ├── 2026-05-08-code-inference-order-create.md
     │   └── 2026-05-10-manual-confirmation-order-create.md
     ├── features/
-    │   └── <domain>/
-    │       └── <capability>.feature
+    │   └── <target>/
+    │       └── <domain>/
+    │           └── <capability>.feature
     ├── flows/
-    │   └── <journey>.feature
+    │   └── <target>/
+    │       └── <domain>/
+    │           └── <journey>.feature
     ├── lint/
     │   └── rules.yaml
     ├── agent-skills/
@@ -78,6 +123,13 @@ version: 1
 spec_dir: harness
 charter_dir: harness/_charter
 language: zh-CN
+targets:
+  - api
+  - web
+  - e2e
+
+workspace:
+  target: api
 
 bdd:
   runner: cucumber-jvm
@@ -109,6 +161,12 @@ commands:
 - `language: zh-CN` 时，feature 文件头必须写 `# language: zh-CN`，并包含 `意图 / 边界 / 待确认`。
 - `language: en` 时，feature 文件头必须写 `# language: en`，并包含 `Intent / Boundaries / To Confirm`。
 
+目标规则：
+
+- `targets` 是项目允许的验证目标，例如 `api`、`web`、`mobile`、`thirdparty`、`worker`、`e2e`。
+- `target` 不是团队名，而是这份契约站在哪个系统入口或交付面验证业务。
+- `workspace.target` 可选，用于子仓库或局部工作区限制当前 AI 只能写某个 target。
+
 ## 能力地图
 
 `capability-map.yaml` 用来固定业务能力边界，避免不同模型随意拆分。
@@ -118,20 +176,28 @@ version: 1
 domains:
   order:
     capabilities:
-      - id: order.create
-        file: features/order/create.feature
+      - id: api.order.create
+        file: features/api/order/create.feature
         entrypoint: OrderController#create
         intent: 创建订单并锁定库存
+      - id: web.order.create
+        file: features/web/order/create.feature
+        entrypoint: /orders/new
+        intent: 前端承载创建订单入口和待支付状态展示
 flows:
-  - id: order.customerPurchase
-    file: flows/customer-purchase.feature
+  - id: e2e.order.customerPurchase
+    file: flows/e2e/order/customer-purchase.feature
     uses:
-      - order.create
+      - api.order.create
+      - web.order.create
 ```
 
 划分规则：
 
 - 一个 capability 对应一个稳定业务目的，不按接口数量机械拆分，也不把完整用户旅程塞进单个 capability。
+- capability id 使用 `<target>.<domain>.<action>`；去掉 target 后的 `<domain>.<action>` 可自然对齐不同验证目标。
+- capability 文件必须放在 `features/<target>/<domain>/` 下。
+- flow id 使用 `<target>.<domain>.<flowName>`，文件必须放在 `flows/<target>/<domain>/` 下。
 - `entrypoint` 写业务入口方法；新需求还没有代码时可以写 `planned:<入口名称>`。
 - 一个 capability 可以覆盖多个规则分支，但这些分支必须服务同一个业务目的。
 - 跨多个 capability 的连续用户路径写在 `flows/`，并通过 `uses` 引用能力。
@@ -146,11 +212,24 @@ flows:
 - 入口：Controller、Handler、Job、Command 或计划入口。
 - 调用链：入口到核心 service/repository 的业务路径。
 - 业务规则：校验、过滤、分支、状态流转、权限、异常处理。
+- 状态变化：会创建、修改、删除或保持不变的对象和状态。
+- 副作用：库存、消息、日志、缓存、任务、通知、快照、上报等变化；没有副作用也要写明。
 - 业务示例：正常、边界、异常和权限场景。
 - 证据：PRD 段落、代码路径、方法名或人工确认来源。
 - 待确认问题：无法从现有材料判断的业务点。
 
 `discover` 通过后仍需要人工确认。人工确认的是“业务边界和规则是否正确”，不是 step 实现。
+
+`discover` 不写文件。它会输出 Feature Discovery Review，自审项包括：
+
+- 是否有业务入口。
+- 代码/混合来源是否有调用链。
+- 业务规则是否不是空泛的“接口成功”。
+- 是否说明状态变化。
+- 是否说明副作用或无副作用保障。
+- 是否有正常、失败或边界例子。
+- 是否有证据来源。
+- 是否列出待确认问题。
 
 ## 业务来源
 
@@ -210,7 +289,7 @@ feature 的 `规则/Rule` 下必须使用固定注释块声明来源：
 
 ```gherkin
 # language: zh-CN
-# capability: order.create
+# capability: api.order.create
 # entrypoint: OrderController#create
 @order @create
 
@@ -279,7 +358,7 @@ Step definitions 写在宿主项目自己的测试目录里，不写在 `harness
 ```text
 your-project/
 ├── harness/
-│   └── features/order/create.feature
+│   └── features/api/order/create.feature
 └── tests-or-src-test/
     └── contract/
         └── bdd/
@@ -347,8 +426,8 @@ Step Evidence Review 只审 step 证据：
 `verify` 使用宿主项目配置的 BDD 命令执行目标 feature 或 flow：
 
 ```text
-verify({ "target": "order.create" })
-verify({ "target_type": "flow", "target": "order.customerPurchase" })
+verify({ "target": "api.order.create" })
+verify({ "target_type": "flow", "target": "e2e.order.customerPurchase" })
 ```
 
 验证成功必须同时满足：
@@ -417,7 +496,7 @@ MCP 只做索引，不负责加载、安装或校验 skill 内容。
 - MCP 不会自动把 skill 加入 `.claude/skills`、`.codex/skills` 或其他客户端目录。
 - 是否使用、怎么同步到客户端目录，由用户和团队自己决定。
 
-`check` 用来做治理检查：
+`check` 用来做 harness 契约治理检查。它不做宿主项目代码风格判断；代码质量交给 `lint` 和 `commands.lint`。
 
 - feature 是否缺少 `# entrypoint`。
 - feature 是否缺少 `规则/Rule`。
@@ -426,7 +505,8 @@ MCP 只做索引，不负责加载、安装或校验 skill 内容。
 - Rule/Scenario 是否缺少固定 `# sources:` 来源块。
 - `sources/` 文件是否按 `YYYY-MM-DD-xxx.md` 命名。
 - `timeline` 是否按日期升序，`current` 是否在 `timeline` 中。
-- 业务 feature 是否放在 `harness/features/<domain>/` 下。
+- 业务 feature 是否放在 `harness/features/<target>/<domain>/` 下。
+- flow 是否放在 `harness/flows/<target>/<domain>/` 下。
 - `capability-map.yaml` 与 feature/flow 是否对齐。
 - `harness/` 下是否混入 BDD 实现代码。
 - 项目配置的 constraints 是否通过。
@@ -468,6 +548,7 @@ Claude Code 配置示例：
 ```bash
 bun run typecheck
 bun run scripts/smoke.ts
+bun run scripts/test-init-guide-discover.ts
 bun run scripts/test-discover.ts
 bun run scripts/test-contract.ts
 bun run scripts/test-sources.ts
@@ -477,4 +558,5 @@ bun run scripts/test-schema-guidance.ts
 bun run scripts/test-verify-bdd.ts
 bun run scripts/test-lint.ts
 bun run scripts/test-check-governance.ts
+bun run scripts/test-targets.ts
 ```

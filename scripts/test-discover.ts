@@ -15,7 +15,7 @@ const assert = (ok: boolean, message: string) => {
 const shallowRaw = await executeDiscover({
   source: "code",
   goal: "客户创建订单",
-  capability: "order.create",
+  capability: "api.order.create",
   entrypoints: ["OrderController#create"],
   call_chain: ["OrderService#create"],
   business_rules: ["接口请求成功后应返回完整内容"],
@@ -35,7 +35,7 @@ assert(
 const richRaw = await executeDiscover({
   source: "mixed",
   goal: "客户创建订单",
-  capability: "order.create",
+  capability: "api.order.create",
   entrypoints: ["OrderController#create"],
   call_chain: [
     "OrderService#create",

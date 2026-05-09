@@ -80,6 +80,7 @@ const expectedTools = [
   "contract",
   "discover",
   "guide",
+  "init",
   "lint",
   "project_context",
   "read_contract",

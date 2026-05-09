@@ -1,0 +1,85 @@
+digraph HarnessMcpIntro {
+  graph [
+    charset="UTF-8",
+    rankdir=LR,
+    newrank=true,
+    splines=ortho,
+    nodesep=0.48,
+    ranksep=0.95,
+    bgcolor="white",
+    pad=0.22,
+    fontname="PingFang SC",
+    fontsize=22,
+    labelloc=t,
+    label="harness-mcp：把 AI 开发变成可追溯、可验证的业务交付"
+  ];
+
+  node [
+    fontname="PingFang SC",
+    fontsize=13,
+    shape=box,
+    style="rounded,filled",
+    color="#8b949e",
+    fillcolor="#ffffff",
+    penwidth=1.2,
+    margin="0.14,0.09"
+  ];
+
+  edge [
+    color="#6e7781",
+    arrowsize=0.75,
+    penwidth=1.15
+  ];
+
+  subgraph cluster_problem {
+    label="团队痛点\nAI 会写代码，但不天然理解业务上下文";
+    color="#d0d7de";
+    style="rounded";
+    fontname="PingFang SC";
+    fontsize=16;
+
+    p5 [group=r5, fillcolor="#fff1f0", color="#cf222e", label="变更影响难追踪\n不知道改了哪些能力和场景"];
+    p4 [group=r4, fillcolor="#fff1f0", color="#cf222e", label="多端协作对不齐\n前端、后端、E2E 各自一套命名"];
+    p3 [group=r3, fillcolor="#fff1f0", color="#cf222e", label="测试不能证明业务正确\n只测接口通，不测业务规则"];
+    p2 [group=r2, fillcolor="#fff1f0", color="#cf222e", label="AI 跳过业务梳理\n直接改实现，容易改偏"];
+    p1 [group=r1, fillcolor="#fff1f0", color="#cf222e", label="业务事实分散\nPRD、会议、聊天、代码各说一部分"];
+  }
+
+  subgraph cluster_method {
+    label="harness-mcp 做什么\n在代码之外建立业务契约层";
+    color="#d0d7de";
+    style="rounded";
+    fontname="PingFang SC";
+    fontsize=16;
+
+    m5 [group=r5, fillcolor="#fff8c5", color="#9a6700", label="verify + lint + check\n验证测试证据和治理规则"];
+    m4 [group=r4, fillcolor="#fff8c5", color="#9a6700", label="capability-map + targets\n统一能力名和交付面"];
+    m3 [group=r3, fillcolor="#fff8c5", color="#9a6700", label="contract\n把规则写成可执行 feature"];
+    m2 [group=r2, fillcolor="#fff8c5", color="#9a6700", label="discover\n先挖入口、调用链、规则、例子"];
+    m1 [group=r1, fillcolor="#fff8c5", color="#9a6700", label="sources\n沉淀业务来源"];
+  }
+
+  subgraph cluster_value {
+    label="交付效果\n多人、多模型、长期迭代有同一套依据";
+    color="#d0d7de";
+    style="rounded";
+    fontname="PingFang SC";
+    fontsize=16;
+
+    v5 [group=r5, fillcolor="#dafbe1", color="#2da44e", label="每次交付都有证据闭环\n来源、契约、测试、检查结果可复查"];
+    v4 [group=r4, fillcolor="#dafbe1", color="#2da44e", label="跨团队用同一张业务地图\napi / web / thirdparty / e2e 可对齐"];
+    v3 [group=r3, fillcolor="#dafbe1", color="#2da44e", label="业务规则被测试保护\n覆盖正常、异常、边界分支"];
+    v2 [group=r2, fillcolor="#dafbe1", color="#2da44e", label="AI 先理解再编码\n减少“能跑但业务错”"];
+    v1 [group=r1, fillcolor="#dafbe1", color="#2da44e", label="业务依据可追溯\n知道每条规则从哪里来"];
+  }
+
+  { rank=same; p5; p4; p3; p2; p1; }
+  { rank=same; m5; m4; m3; m2; m1; }
+  { rank=same; v5; v4; v3; v2; v1; }
+
+  p1 -> m1 -> v1;
+  p2 -> m2 -> v2;
+  p3 -> m3 -> v3;
+  p4 -> m4 -> v4;
+  p5 -> m5 -> v5;
+}

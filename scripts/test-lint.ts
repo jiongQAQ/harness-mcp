@@ -15,6 +15,8 @@ await writeFile(
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
 `,
 );
 await writeFile(
@@ -66,6 +68,8 @@ await writeFile(
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
 commands:
   lint:
     cmd: "sh -c 'echo lint failed >&2; exit 7'"
@@ -91,6 +95,8 @@ await writeFile(
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
 `,
 );
 await writeFile(
@@ -138,6 +144,8 @@ await writeFile(
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
 `,
 );
 await writeFile(

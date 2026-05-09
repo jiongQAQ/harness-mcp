@@ -15,6 +15,8 @@ await Bun.write(
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
 `,
 );
 await Bun.write(
@@ -43,15 +45,15 @@ const mapContent = `version: 1
 domains:
   order:
     capabilities:
-      - id: order.create
-        file: features/order/create.feature
+      - id: api.order.create
+        file: features/api/order/create.feature
         entrypoint: OrderController#create
         intent: 创建订单并锁定库存
 flows: []
 `;
 
 const validFeature = `# language: zh-CN
-# capability: order.create
+# capability: api.order.create
 # entrypoint: OrderController#create
 # files: OrderService#create, InventoryService#reserve
 @order @create
@@ -114,8 +116,8 @@ for (const [content, expected] of [
   const result = await executeContract({
     path: tmpRoot,
     kind: "capability",
-    id: "order.create",
-    file: "features/order/create.feature",
+    id: "api.order.create",
+    file: "features/api/order/create.feature",
     content,
     map_content: mapContent,
   });
@@ -126,8 +128,8 @@ for (const [content, expected] of [
 const createdRaw = await executeContract({
   path: tmpRoot,
   kind: "capability",
-  id: "order.create",
-  file: "features/order/create.feature",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
   content: validFeature,
   map_content: mapContent,
   raw: true,
@@ -138,7 +140,7 @@ assert(created.ok === true, "contract should succeed");
 assert(created.next_required_action === "Feature Contract Review", "contract should require Feature Contract Review");
 assert(created.scenario_count === 3, "contract should count scenarios inside Rule");
 
-const featureOnDisk = await readFile(resolve(tmpRoot, "harness/features/order/create.feature"), "utf-8");
+const featureOnDisk = await readFile(resolve(tmpRoot, "harness/features/api/order/create.feature"), "utf-8");
 const mapOnDisk = await readFile(resolve(tmpRoot, "harness/capability-map.yaml"), "utf-8");
 assert(featureOnDisk.includes("创建订单时锁定库存"), "feature should be written");
 assert(mapOnDisk.includes("entrypoint: OrderController#create"), "map should be written");

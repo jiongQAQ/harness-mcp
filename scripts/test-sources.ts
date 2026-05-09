@@ -13,12 +13,14 @@ import { executeReadSource } from "../src/tools/read_source.ts";
 
 const tmpRoot = await mkdtemp(`${tmpdir()}/harness-mcp-sources-`);
 await mkdir(resolve(tmpRoot, "harness/sources"), { recursive: true });
-await mkdir(resolve(tmpRoot, "harness/features/order"), { recursive: true });
+await mkdir(resolve(tmpRoot, "harness/features/api/order"), { recursive: true });
 await writeFile(
   resolve(tmpRoot, "harness.yaml"),
   `version: 1
 spec_dir: harness
 charter_dir: harness/_charter
+targets:
+  - api
 `,
 );
 await writeFile(
@@ -49,15 +51,15 @@ const mapContent = `version: 1
 domains:
   order:
     capabilities:
-      - id: order.create
-        file: features/order/create.feature
+      - id: api.order.create
+        file: features/api/order/create.feature
         entrypoint: OrderController#create
         intent: 创建订单并锁定库存
 flows: []
 `;
 
 const featureWithSources = `# language: zh-CN
-# capability: order.create
+# capability: api.order.create
 # entrypoint: OrderController#create
 @order @create
 
@@ -97,8 +99,8 @@ const assert = (ok: boolean, message: string) => {
 const createdRaw = await executeContract({
   path: tmpRoot,
   kind: "capability",
-  id: "order.create",
-  file: "features/order/create.feature",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
   content: featureWithSources,
   map_content: mapContent,
   raw: true,
@@ -107,15 +109,15 @@ const created = JSON.parse(createdRaw);
 console.log("=== valid sources contract ===\n" + createdRaw + "\n");
 assert(created.ok === true, "contract should accept valid sources block");
 
-const featureOnDisk = await readFile(resolve(tmpRoot, "harness/features/order/create.feature"), "utf-8");
+const featureOnDisk = await readFile(resolve(tmpRoot, "harness/features/api/order/create.feature"), "utf-8");
 assert(featureOnDisk.includes("# sources:"), "feature should be written with sources block");
 
 const missingSources = featureWithSources.replace(/    # sources:[\s\S]+?\n\n    场景:/, "    场景:");
 const missingSourcesResult = await executeContract({
   path: tmpRoot,
   kind: "capability",
-  id: "order.create",
-  file: "features/order/create.feature",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
   content: missingSources,
   map_content: mapContent,
 });
@@ -129,8 +131,8 @@ const missingFile = featureWithSources.replace(
 const missingFileResult = await executeContract({
   path: tmpRoot,
   kind: "capability",
-  id: "order.create",
-  file: "features/order/create.feature",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
   content: missingFile,
   map_content: mapContent,
 });
@@ -144,8 +146,8 @@ const currentOutsideTimeline = featureWithSources.replace(
 const currentOutsideTimelineResult = await executeContract({
   path: tmpRoot,
   kind: "capability",
-  id: "order.create",
-  file: "features/order/create.feature",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
   content: currentOutsideTimeline,
   map_content: mapContent,
 });
@@ -161,8 +163,8 @@ const reversedTimeline = featureWithSources.replace(
 const reversedTimelineResult = await executeContract({
   path: tmpRoot,
   kind: "capability",
-  id: "order.create",
-  file: "features/order/create.feature",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
   content: reversedTimeline,
   map_content: mapContent,
 });
@@ -181,8 +183,8 @@ const topLevelScenario = featureWithSources.replace(
 const topLevelScenarioResult = await executeContract({
   path: tmpRoot,
   kind: "capability",
-  id: "order.create",
-  file: "features/order/create.feature",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
   content: topLevelScenario,
   map_content: mapContent,
 });

@@ -14,7 +14,7 @@ export const HelpInputSchema = z.object({
   topic: z
     .string()
     .optional()
-    .describe("指南主题: overview/workflow/tools/discover/contract/harness-yaml/capability-map/sources/feature/bdd/lint/agent-skills/check 或工具名"),
+    .describe("指南主题: overview/workflow/new-project/legacy-project/new-feature/change-feature/frontend-backend-e2e/verify-failed/tools/init/discover/contract/harness-yaml/capability-map/sources/feature/bdd/lint/agent-skills/check 或工具名"),
   raw: z.boolean().optional().describe("true 返回 JSON,false/缺省 返回格式化文本"),
 });
 
@@ -27,6 +27,96 @@ export async function executeHelp(input: HelpInput): Promise<string> {
   }
   if (!topic || topic === "overview") return renderOverview();
   if (topic === "workflow") return renderWorkflow();
+  if (topic === "new-project") return renderScenarioGuide({
+    title: "new-project: 新项目从 0 接入",
+    when: "项目还没有 harness 目录,需要先建立业务契约骨架。",
+    action: '先调用 init({ mode: "new", targets: ["api", "web", "e2e"] }),再调用 project_context() 确认结构。',
+    prepare: [
+      "项目根目录路径",
+      "本项目需要的 targets,例如 api/web/e2e;不确定时先用 api/web/e2e",
+      "首批 PRD、人工确认或需求描述,后续放入 harness/sources/",
+    ],
+    next: [
+      "不要直接写 feature",
+      "先沉淀 source,再用 discover 输出业务发现包",
+      "人工确认业务边界后再调用 contract",
+    ],
+  });
+  if (topic === "legacy-project") return renderScenarioGuide({
+    title: "legacy-project: 旧项目补业务契约",
+    when: "代码已经存在,但缺少可追溯的业务契约和 BDD 保护。",
+    action: '先调用 init({ mode: "legacy", targets: ["api"] }),再从真实入口方法开始 discover。',
+    prepare: [
+      "一个具体业务入口,例如 Controller/API/Consumer/Job",
+      "入口到核心 Service/Repository/外部服务的调用链",
+      "从代码、SQL、现有测试推断出的规则和不确定点",
+    ],
+    next: [
+      "不要直接写 feature",
+      "把代码推断沉淀到 harness/sources/YYYY-MM-DD-code-inference-xxx.md",
+      "discover PASS 后必须人工确认,再 contract",
+    ],
+  });
+  if (topic === "new-feature") return renderScenarioGuide({
+    title: "new-feature: 新增业务能力",
+    when: "用户提出新需求,需要拆分能力并落地 feature 契约。",
+    action: "先阅读来源并调用 discover,不要先写代码或 step definitions。",
+    prepare: [
+      "需求来源: PRD、工单、会议纪要或人工描述",
+      "拟定 capability id: <target>.<domain>.<action>",
+      "正常、失败、边界例子和待确认问题",
+    ],
+    next: [
+      "人工确认 discover 结果",
+      "contract 写 capability-map.yaml 和 feature",
+      "Feature Contract Review 后再写测试和实现",
+    ],
+  });
+  if (topic === "change-feature") return renderScenarioGuide({
+    title: "change-feature: 修改已有业务能力",
+    when: "已有 capability 的规则发生变化,或需要补充场景。",
+    action: "先 read_contract/read_source 读取旧契约和来源,再补充新的 source 和 discover。",
+    prepare: [
+      "被影响的 capability 或 flow",
+      "本次变更来源文档",
+      "新增、删除或改变的业务规则",
+    ],
+    next: [
+      "保持 sources.timeline 从旧到新",
+      "contract 更新 feature 后做 Feature Contract Review",
+      "verify 相关 capability/flow,再做 Step Evidence Review",
+    ],
+  });
+  if (topic === "frontend-backend-e2e") return renderScenarioGuide({
+    title: "frontend-backend-e2e: 前端、后端和 E2E 协作",
+    when: "一个业务同时涉及 api/web/thirdparty/e2e 等多个交付面。",
+    action: "用 targets 区分交付面,用 capability-map 对齐同一个 domain/action。",
+    prepare: [
+      "harness.yaml targets,例如 api/web/thirdparty/e2e",
+      "子仓库可设置 workspace.target 防止写错交付面",
+      "跨端流程写 flows/<target>/<domain>/,不要塞进单个 capability",
+    ],
+    next: [
+      "后端只写 api.* feature",
+      "前端只写 web.* feature",
+      "跨端用户旅程写 e2e.* flow 并 uses 相关 capability",
+    ],
+  });
+  if (topic === "verify-failed") return renderScenarioGuide({
+    title: "verify-failed: BDD 验证失败或假通过",
+    when: "verify 没有通过,或命令成功但 report 没覆盖目标 feature/scenario。",
+    action: "先看 report_fresh、bdd_coverage、missing_scenarios 和 non_passed_scenarios。",
+    prepare: [
+      "确认 bdd.cmd 是否真的接收了 {feature}",
+      "确认 report.path 是本次运行生成",
+      "确认每个 Then 都有同等级证据断言",
+    ],
+    next: [
+      "修 runner/step/report 配置,不要只改 feature 文本绕过",
+      "verify PASS 后输出 Step Evidence Review",
+      "再运行 lint 和 check",
+    ],
+  });
   if (topic === "tools") return renderTools();
   if (topic === "discover") return renderDiscoverGuide();
   if (topic === "contract" || topic === "feature") return renderContractGuide();
@@ -46,10 +136,21 @@ function renderOverview(): string {
   return [
     "harness-mcp guide",
     "",
-    "harness-mcp 是业务发现驱动的 BDD 契约层。它不替代 Cucumber/behave/godog,只负责引导 AI 先发现业务规则,再写可执行业务契约,最后校验 BDD report 是否真的覆盖目标 feature。",
+    "harness-mcp 是面向 AI 协作开发的业务契约治理层。它不替代 Cucumber/behave/godog,只负责让 AI 先发现业务规则,再写可执行业务契约,最后用 report 和治理检查证明交付没有偏离契约。",
+    "",
+    "最短路径:",
+    "  1. 新项目: guide({ topic: \"new-project\" }) -> init -> project_context",
+    "  2. 旧项目: guide({ topic: \"legacy-project\" }) -> init -> project_context -> discover",
+    "  3. 新业务: read_source/read_contract -> discover -> 人工确认 -> contract",
+    "  4. 改完: verify -> Step Evidence Review -> lint -> check",
+    "",
+    "遇到 schema 错误:",
+    "  不要盲猜 YAML 结构。先调用对应 guide topic,再用工具参数修复。",
+    "  capability-map.yaml 错误: guide({ topic: \"capability-map\" }) -> contract({ ..., map_content: \"<完整正确 YAML>\" })",
+    "  harness.yaml 错误: guide({ topic: \"harness-yaml\" }) -> 修正 harness.yaml -> project_context/check",
     "",
     "核心流程:",
-    "  新需求/已有代码 -> discover -> 人工确认 -> contract -> Feature Contract Review -> 写测试和实现 -> verify -> Step Evidence Review -> lint -> check",
+    "  init -> project_context -> discover -> 人工确认 -> contract -> Feature Contract Review -> 写测试和实现 -> verify -> Step Evidence Review -> lint -> check",
     "",
     "公开工具:",
     ...TOOL_CATALOG.map((tool) => `  - ${tool.name}: ${tool.description}`),
@@ -63,7 +164,7 @@ function renderWorkflow(): string {
     "推荐工作流",
     "",
     "新需求:",
-    "  PRD/用户描述 -> discover 输出业务发现包 -> 人工确认 -> contract 写 map + feature -> 写测试和实现 -> verify/lint/check",
+    "  init(首次接入) -> PRD/用户描述/source -> discover 输出业务发现包 -> 人工确认 -> contract 写 map + feature -> 写测试和实现 -> verify/lint/check",
     "",
     "已有代码补契约:",
     "  入口方法/API/Consumer/Job -> discover 读取调用链并推导业务规则 -> 人工确认 -> contract 补 feature 和测试 -> verify/lint/check",
@@ -72,12 +173,37 @@ function renderWorkflow(): string {
     "  feature 不变 -> 改代码 -> verify/lint/check",
     "",
     "判断标准:",
+    "  init 负责创建最小结构,不生成业务 feature。",
     "  discover 负责防止 AI 只写接口成功。",
     "  contract 负责防止 Rule-less feature 和空泛 Then 落盘。",
     "  verify 负责证明本次 BDD report 覆盖目标 feature 且全部场景 passed。",
     "  lint 负责执行 harness/lint/rules.yaml 自定义禁用规则和宿主项目 lint 命令。",
     "  Step Evidence Review 负责证明每个 Then 被同等级断言验证。",
     "  sources 负责让每条 Rule/Scenario 能追溯到 PRD、人工确认、代码推断或其他来源。",
+  ].join("\n");
+}
+
+function renderScenarioGuide(input: {
+  title: string;
+  when: string;
+  action: string;
+  prepare: string[];
+  next: string[];
+}): string {
+  return [
+    input.title,
+    "",
+    "什么时候用:",
+    `  ${input.when}`,
+    "",
+    "现在该调用:",
+    `  ${input.action}`,
+    "",
+    "需要准备:",
+    ...input.prepare.map((item) => `  - ${item}`),
+    "",
+    "下一步:",
+    ...input.next.map((item) => `  - ${item}`),
   ].join("\n");
 }
 
@@ -109,6 +235,8 @@ function renderContractGuide(): string {
     CAPABILITY_MAP_SCHEMA_HELP,
     "",
     "feature 必须是 Rule-first:",
+    "  - capability id 使用 <target>.<domain>.<action>,target 必须在 harness.yaml targets 中声明",
+    "  - capability 文件放在 features/<target>/<domain>/;flow 文件放在 flows/<target>/<domain>/",
     "  - language 缺省 zh-CN;配置 language: en 时,feature 头必须写 # language: en",
     "  - 中文必填段落: 意图 / 边界 / 待确认",
     "  - 英文必填段落: Intent / Boundaries / To Confirm",
@@ -116,7 +244,7 @@ function renderContractGuide(): string {
     "",
     "```gherkin",
     "# language: zh-CN",
-    "# capability: order.create",
+    "# capability: api.order.create",
     "# entrypoint: OrderController#create",
     "@order",
     "",
@@ -198,6 +326,12 @@ function renderCapabilityMapGuide(): string {
     "",
     "capability-map.yaml 用来固定业务能力边界,避免不同模型随意拆分 capability。",
     "",
+    "修复原则:",
+    "  - 不要盲猜 YAML 结构,不要一个格式一个格式试",
+    "  - 先按下面 schema 生成完整 capability-map.yaml",
+    "  - 再调用 contract({ ..., map_content: \"<完整正确 YAML>\" }) 一次性覆盖修复",
+    "  - 顶层只能有 version / domains / flows",
+    "",
     CAPABILITY_MAP_SCHEMA_HELP,
   ].join("\n");
 }
@@ -269,6 +403,10 @@ function renderCheckGuide(): string {
   return [
     "check: 静态治理和项目约束",
     "",
+    "边界:",
+    "  - check 只管 harness 契约治理和 constraints",
+    "  - check 不做宿主项目代码风格判断;代码质量请用 lint 和 commands.lint",
+    "",
     "check 会检查:",
     "  - feature 缺 # entrypoint",
     "  - feature 缺 Rule/规则",
@@ -277,7 +415,8 @@ function renderCheckGuide(): string {
     "  - sources 文件未按 YYYY-MM-DD-xxx.md 命名",
     "  - sources timeline 日期倒序或 current 不在 timeline 中",
     "  - Then 写得过于空泛",
-    "  - 业务 feature 不在 harness/features/<业务域>/ 下",
+    "  - 业务 feature 不在 harness/features/<target>/<domain>/ 下",
+    "  - flow 不在 harness/flows/<target>/<domain>/ 下",
     "  - _charter 章程误写成 .feature,应使用 Markdown",
     "  - capability-map.yaml 与 features/flows 不对齐",
     "  - BDD steps 或 runner config 被写进 harness/",

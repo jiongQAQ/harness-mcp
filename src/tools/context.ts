@@ -47,7 +47,7 @@ export async function executeContext(input: ContextInput): Promise<string> {
     loaded.specDirAbs,
     loaded.charterDirAbs,
   );
-  const capabilityMap = await loadCapabilityMap(loaded.specDirAbs);
+  const capabilityMap = await loadCapabilityMap(loaded.specDirAbs, loaded.config.targets);
 
   if (input.raw) {
     return JSON.stringify(
@@ -172,13 +172,16 @@ export async function executeContext(input: ContextInput): Promise<string> {
   // 引导
   lines.push("");
   lines.push("── How to use ──");
+  lines.push("  • 首次接入: guide({ topic: \"new-project\" }) 或 guide({ topic: \"legacy-project\" }) → init → project_context");
   lines.push("  • 新增业务/已有代码补契约: PRD/入口方法 → discover → 人工确认 → contract → Feature Contract Review → 写测试和实现 → verify → Step Evidence Review → lint → check");
   lines.push("  • 纯重构: feature 不变 → verify/lint/check 保证行为和代码质量");
   lines.push("  • 目录约定: harness.yaml 使用 spec_dir: harness,不要创建 harness/specs");
   lines.push("  • 全局章程放在 harness/_charter/*.md,用于架构、命名、模块边界和编码约定");
-  lines.push("  • 业务 feature 放在 harness/features/<业务域>/<能力>.feature");
+  lines.push("  • harness.yaml 必须声明 targets;target 是验证目标,例如 api/web/mobile/thirdparty/e2e");
+  lines.push("  • 业务 feature 放在 harness/features/<target>/<domain>/<能力>.feature");
+  lines.push("  • flow 放在 harness/flows/<target>/<domain>/<流程>.feature");
   lines.push("  • 新建业务 feature 前先 discover,让 AI 输出业务入口、调用链、业务规则、例子、待确认问题和证据来源");
-  lines.push("  • capability-map.yaml 固定 id/file/entrypoint/intent");
+  lines.push("  • capability-map.yaml 固定 id/file/entrypoint/intent;id 使用 <target>.<domain>.<action>");
   lines.push("  • 一个业务 feature 只承诺一个可独立验证的业务结果;多阶段编排写 flows");
   lines.push("  • feature 必须有 # entrypoint,并使用 Rule/规则 分组");
   lines.push("  • contract 后先做 Feature Contract Review,再写 BDD steps");

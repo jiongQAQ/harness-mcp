@@ -34,6 +34,7 @@ export type CapabilityMap = z.infer<typeof CapabilityMapSchema>;
 export type CapabilityMapFlow = z.infer<typeof FlowSchema>;
 
 export interface CapabilityMapCapability {
+  target: string;
   domain: string;
   id: string;
   file: string;
@@ -45,15 +46,20 @@ export const CAPABILITY_MAP_EXAMPLE = `version: 1
 domains:
   order:
     capabilities:
-      - id: order.create
-        file: features/order/create.feature
+      - id: api.order.create
+        file: features/api/order/create.feature
         entrypoint: OrderController#create
         intent: 客户提交有效购买请求后创建待支付订单
+      - id: web.order.create
+        file: features/web/order/create.feature
+        entrypoint: /orders/new
+        intent: 前端承载创建订单表单和待支付状态展示
 flows:
-  - id: order.customerPurchase
-    file: flows/customer-purchase.feature
+  - id: e2e.order.customerPurchase
+    file: flows/e2e/order/customer-purchase.feature
     uses:
-      - order.create
+      - api.order.create
+      - web.order.create
 `;
 
 export const CAPABILITY_MAP_SCHEMA_HELP = [
@@ -68,8 +74,15 @@ export const CAPABILITY_MAP_SCHEMA_HELP = [
   "  - flows",
   "",
   "禁止格式:",
-  "  - 顶层直接写 order.create:",
+  "  - 顶层直接写 api.order.create:",
   "  - 顶层写 capabilities:",
+  "",
+  "说明:",
+  "  - capability id 使用 <target>.<domain>.<action>",
+  "  - capability file 必须位于 features/<target>/<domain>/",
+  "  - flow id 使用 <target>.<domain>.<flowName>",
+  "  - flow file 必须位于 flows/<target>/<domain>/",
+  "  - target 必须在 harness.yaml targets 中声明",
   "",
   "Next action:",
   '  1. 调用 guide({ topic: "capability-map" }) 查看 schema',
@@ -92,7 +105,7 @@ export function capabilityMapPath(specDirAbs: string): string {
   return resolve(specDirAbs, "capability-map.yaml");
 }
 
-export async function loadCapabilityMap(specDirAbs: string): Promise<CapabilityMapLoad> {
+export async function loadCapabilityMap(specDirAbs: string, targets: readonly string[]): Promise<CapabilityMapLoad> {
   const path = capabilityMapPath(specDirAbs);
   if (!existsSync(path)) return { exists: false, path };
 
@@ -103,7 +116,7 @@ export async function loadCapabilityMap(specDirAbs: string): Promise<CapabilityM
     return { exists: true, path, ok: false, error: `无法读取 capability-map.yaml: ${(e as Error).message}` };
   }
 
-  const parsed = parseCapabilityMapContent(content);
+  const parsed = parseCapabilityMapContent(content, targets);
   if (!parsed.ok) return { exists: true, path, ok: false, error: parsed.error };
 
   return {
@@ -118,6 +131,7 @@ export async function loadCapabilityMap(specDirAbs: string): Promise<CapabilityM
 
 export function parseCapabilityMapContent(
   content: string,
+  targets?: readonly string[],
 ): { ok: true; map: CapabilityMap } | { ok: false; error: string } {
   let parsed: unknown;
   try {
@@ -134,7 +148,7 @@ export function parseCapabilityMapContent(
     };
   }
 
-  const issues = validateCapabilityMap(result.data);
+  const issues = validateCapabilityMap(result.data, targets);
   if (issues.length > 0) {
     return { ok: false, error: formatCapabilityMapError(issues.join("; ")) };
   }
@@ -155,7 +169,8 @@ export function flattenCapabilityMap(map: CapabilityMap): CapabilityMapCapabilit
   const result: CapabilityMapCapability[] = [];
   for (const [domain, value] of Object.entries(map.domains)) {
     for (const capability of value.capabilities) {
-      result.push({ domain, ...capability });
+      const idParts = parseTargetedId(capability.id);
+      result.push({ target: idParts?.target ?? "", domain, ...capability });
     }
   }
   return result.sort((a, b) => a.id.localeCompare(b.id));
@@ -194,21 +209,30 @@ export function validateMapRelFeaturePath(
   return { ok: true, normalized, segments };
 }
 
-function validateCapabilityMap(map: CapabilityMap): string[] {
+function validateCapabilityMap(map: CapabilityMap, targets?: readonly string[]): string[] {
   const issues: string[] = [];
+  const targetSet = targets ? new Set(targets) : null;
   const capabilityIds = new Set<string>();
   const capabilityFiles = new Map<string, string>();
   const flowIds = new Set<string>();
 
   for (const [domain, value] of Object.entries(map.domains)) {
     for (const capability of value.capabilities) {
+      const idParts = parseTargetedId(capability.id);
       if (capabilityIds.has(capability.id)) {
         issues.push(`重复 capability id: ${capability.id}`);
       }
       capabilityIds.add(capability.id);
 
-      if (!capability.id.startsWith(`${domain}.`)) {
-        issues.push(`capability id ${capability.id} 必须以 domain "${domain}." 开头`);
+      if (!idParts) {
+        issues.push(`capability id ${capability.id} 必须使用 <target>.<domain>.<action>`);
+      } else {
+        if (targetSet && !targetSet.has(idParts.target)) {
+          issues.push(`capability id ${capability.id} 的 target "${idParts.target}" 未在 harness.yaml targets 中声明`);
+        }
+        if (idParts.domain !== domain) {
+          issues.push(`capability id ${capability.id} 的 domain 必须是 "${domain}"`);
+        }
       }
       const pathValidation = validateMapRelFeaturePath(capability.file);
       if (!pathValidation.ok) {
@@ -223,24 +247,52 @@ function validateCapabilityMap(map: CapabilityMap): string[] {
         }
 
         const segments = pathValidation.segments;
-        if (segments[0] !== "features" || segments[1] !== domain || segments.length < 3) {
-          issues.push(`capability ${capability.id} 的 file 必须位于 features/${domain}/`);
+        if (
+          !idParts ||
+          segments[0] !== "features" ||
+          segments[1] !== idParts.target ||
+          segments[2] !== domain ||
+          segments.length < 4
+        ) {
+          issues.push(`capability ${capability.id} 的 file 必须位于 features/<target>/<domain>/`);
+        } else if (targetSet && !targetSet.has(segments[1]!)) {
+          issues.push(`capability ${capability.id} 的 file target "${segments[1]}" 未在 harness.yaml targets 中声明`);
         }
       }
     }
   }
 
   for (const flow of map.flows) {
+    const idParts = parseTargetedId(flow.id);
     if (flowIds.has(flow.id)) {
       issues.push(`重复 flow id: ${flow.id}`);
     }
     flowIds.add(flow.id);
 
+    if (!idParts) {
+      issues.push(`flow id ${flow.id} 必须使用 <target>.<domain>.<flowName>`);
+    } else {
+      if (targetSet && !targetSet.has(idParts.target)) {
+        issues.push(`flow id ${flow.id} 的 target "${idParts.target}" 未在 harness.yaml targets 中声明`);
+      }
+      if (!Object.prototype.hasOwnProperty.call(map.domains, idParts.domain)) {
+        issues.push(`flow id ${flow.id} 使用未知 domain: ${idParts.domain}`);
+      }
+    }
+
     const pathValidation = validateMapRelFeaturePath(flow.file);
     if (!pathValidation.ok) {
       issues.push(`flow ${flow.id} 的 file ${pathValidation.error}`);
-    } else if (pathValidation.segments[0] !== "flows") {
-      issues.push(`flow ${flow.id} 的 file 必须位于 flows/`);
+    } else if (
+      !idParts ||
+      pathValidation.segments[0] !== "flows" ||
+      pathValidation.segments[1] !== idParts.target ||
+      pathValidation.segments[2] !== idParts.domain ||
+      pathValidation.segments.length < 4
+    ) {
+      issues.push(`flow ${flow.id} 的 file 必须位于 flows/<target>/<domain>/`);
+    } else if (targetSet && !targetSet.has(pathValidation.segments[1]!)) {
+      issues.push(`flow ${flow.id} 的 file target "${pathValidation.segments[1]}" 未在 harness.yaml targets 中声明`);
     }
 
     for (const used of flow.uses) {
@@ -251,6 +303,14 @@ function validateCapabilityMap(map: CapabilityMap): string[] {
   }
 
   return issues;
+}
+
+function parseTargetedId(id: string): { target: string; domain: string; rest: string[] } | null {
+  const parts = id.split(".");
+  if (parts.length < 3 || parts.some((part) => part.trim() === "")) return null;
+  const [target, domain, ...rest] = parts;
+  if (!target || !domain || rest.length === 0) return null;
+  return { target, domain, rest };
 }
 
 function formatZodIssues(issues: z.ZodIssue[]): string {

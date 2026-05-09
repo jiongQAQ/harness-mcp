@@ -1,0 +1,200 @@
+digraph HarnessMcpActivity {
+  graph [
+    charset="UTF-8",
+    rankdir=TB,
+    compound=true,
+    splines=polyline,
+    nodesep=0.42,
+    ranksep=0.62,
+    bgcolor="white",
+    fontname="PingFang SC",
+    fontsize=18,
+    labelloc=t,
+    label="harness-mcp 功能活动图"
+  ];
+
+  node [
+    fontname="PingFang SC",
+    fontsize=12,
+    shape=box,
+    style="rounded,filled",
+    color="#8b949e",
+    fillcolor="#ffffff",
+    penwidth=1.2
+  ];
+
+  edge [
+    fontname="PingFang SC",
+    fontsize=11,
+    color="#57606a",
+    arrowsize=0.8
+  ];
+
+  start [shape=oval, fillcolor="#dff6dd", color="#2da44e", label="开始\n新项目 / 旧项目接入 / 子仓库接入"];
+  done [shape=doublecircle, fillcolor="#dff6dd", color="#2da44e", label="可交付\n契约、测试、代码、治理均通过"];
+
+  subgraph cluster_init {
+    label="1. 项目接入与全局治理";
+    color="#d0d7de";
+    style="rounded";
+    fontname="PingFang SC";
+
+    guide [fillcolor="#fff8c5", label="guide\n查看 MCP 规则、schema、流程\n不读取当前项目"];
+    init_config [fillcolor="#ddf4ff", label="配置 harness.yaml\nspec_dir / charter_dir / language"];
+    targets [fillcolor="#ddf4ff", label="声明 targets\napi / web / mobile / thirdparty / e2e"];
+    workspace [fillcolor="#ddf4ff", label="可选 workspace.target\n限制当前工作区只能写某个 target"];
+    charter [fillcolor="#f6f8fa", label="沉淀 _charter/*.md\n架构、命名、模块边界、约束"];
+    sources_dir [fillcolor="#f6f8fa", label="准备 sources/\nPRD / 会议 / 工单 / 人工确认 / 代码推断"];
+    skills_dir [fillcolor="#f6f8fa", label="可选 agent-skills/\n只作为团队 skill 存储区"];
+    context [fillcolor="#fff8c5", label="project_context\n读取章程、来源、能力地图、已有契约、AI 指引"];
+  }
+
+  subgraph cluster_task {
+    label="2. 判断当前任务类型";
+    color="#d0d7de";
+    style="rounded";
+    fontname="PingFang SC";
+
+    task_type [shape=diamond, fillcolor="#ffebe9", color="#cf222e", label="当前要做什么?"];
+    new_req [fillcolor="#f6f8fa", label="新需求\n从来源文档或人工描述开始"];
+    legacy [fillcolor="#f6f8fa", label="旧项目补契约\n从入口方法、调用链、现有测试推导"];
+    refactor [fillcolor="#f6f8fa", label="纯重构\n业务契约不变"];
+    read_existing [fillcolor="#fff8c5", label="read_contract / read_source\n读取已有契约和来源"];
+  }
+
+  subgraph cluster_discovery {
+    label="3. 业务发现与人工确认";
+    color="#d0d7de";
+    style="rounded";
+    fontname="PingFang SC";
+
+    collect_evidence [fillcolor="#f6f8fa", label="收集证据\n入口、调用链、规则、例子、边界、疑问"];
+    discover [fillcolor="#fff8c5", label="discover\n校验业务挖掘是否足够深入"];
+    discovery_ok [shape=diamond, fillcolor="#ffebe9", color="#cf222e", label="发现结果足够吗?"];
+    enrich_discovery [fillcolor="#ffebe9", label="补充发现\n不能只写 API 成功\n要补权限、状态、副作用、异常、边界"];
+    human_confirm [fillcolor="#ddf4ff", label="人工确认\n确认业务规则、待确认问题、来源"];
+  }
+
+  subgraph cluster_contract {
+    label="4. 业务契约写入";
+    color="#d0d7de";
+    style="rounded";
+    fontname="PingFang SC";
+
+    map_design [fillcolor="#f6f8fa", label="设计 capability-map.yaml\n按 domain 组织业务能力"];
+    target_rule [fillcolor="#ddf4ff", label="target 规则\nid: <target>.<domain>.<action>\nfile: features/<target>/<domain>/..."];
+    flow_rule [fillcolor="#ddf4ff", label="flow 规则\nid: <target>.<domain>.<flowName>\nfile: flows/<target>/<domain>/..."];
+    contract [fillcolor="#fff8c5", label="contract\n写 capability-map 与 .feature"];
+    contract_gate [shape=diamond, fillcolor="#ffebe9", color="#cf222e", label="contract 硬校验通过?"];
+    fix_contract [fillcolor="#ffebe9", label="修正契约\nid / target / path / Rule / sources / language"];
+    feature_review [fillcolor="#ddf4ff", label="Feature Contract Review\n只审 feature 契约\n不审 step 实现"];
+  }
+
+  subgraph cluster_bdd {
+    label="5. 测试与实现";
+    color="#d0d7de";
+    style="rounded";
+    fontname="PingFang SC";
+
+    write_steps [fillcolor="#f6f8fa", label="宿主项目写 BDD step definitions\n不写进 harness/"];
+    bdd_layout [fillcolor="#f6f8fa", label="推荐测试目录\ncontract/bdd/runner\ncontract/bdd/steps/<domain>\ncontract/bdd/support"];
+    implement_code [fillcolor="#f6f8fa", label="实现或修改业务代码\n前端 / 后端 / 第三方服务均可"];
+    run_verify [fillcolor="#fff8c5", label="verify\n执行 capability 或 flow BDD"];
+    report_gate [shape=diamond, fillcolor="#ffebe9", color="#cf222e", label="report 覆盖目标 feature\n且所有场景通过?"];
+    fix_steps [fillcolor="#ffebe9", label="修正 step / runner / report / 业务实现"];
+    evidence_review [fillcolor="#ddf4ff", label="Step Evidence Review\n检查 Then 与真实断言是否匹配\nAPI 断言不能证明 UI 展示"];
+  }
+
+  subgraph cluster_quality {
+    label="6. 代码质量与 harness 治理";
+    color="#d0d7de";
+    style="rounded";
+    fontname="PingFang SC";
+
+    lint_rules [fillcolor="#f6f8fa", label="harness/lint/rules.yaml\n项目自定义禁用规则\n默认不内置代码风格判断"];
+    lint [fillcolor="#fff8c5", label="lint\n执行自定义规则 + commands.lint"];
+    lint_gate [shape=diamond, fillcolor="#ffebe9", color="#cf222e", label="lint 通过?"];
+    fix_code [fillcolor="#ffebe9", label="修正代码或宿主 lint 配置"];
+    check [fillcolor="#fff8c5", label="check\n全量静态治理检查"];
+    check_items [fillcolor="#f6f8fa", label="check 覆盖\nfeature 质量\nsources 追溯\ncapability-map 对齐\n目录结构\nharness 内禁止 BDD 实现"];
+    check_gate [shape=diamond, fillcolor="#ffebe9", color="#cf222e", label="check 通过?"];
+    fix_governance [fillcolor="#ffebe9", label="修正 harness 治理问题\n来源、路径、地图、契约结构"];
+  }
+
+  subgraph cluster_collab {
+    label="7. 多团队 / 多 target 协作效果";
+    color="#d0d7de";
+    style="rounded,dashed";
+    fontname="PingFang SC";
+
+    api_team [fillcolor="#ddf4ff", label="后端团队\nworkspace.target=api\n只能写 api.*"];
+    web_team [fillcolor="#ddf4ff", label="前端团队\nworkspace.target=web\n只能写 web.*"];
+    third_team [fillcolor="#ddf4ff", label="第三方服务团队\nworkspace.target=thirdparty\n只能写 thirdparty.*"];
+    e2e_team [fillcolor="#ddf4ff", label="集成测试\nworkspace.target=e2e\n编排跨 target flow"];
+    shared_domain [fillcolor="#f6f8fa", label="共享 domain\n例如 order / ailearning\n由 capability-map 对齐命名"];
+    shared_map [fillcolor="#f6f8fa", label="统一 capability-map.yaml\napi.order.create\nweb.order.create\ne2e.order.customerPurchase"];
+  }
+
+  start -> guide;
+  guide -> init_config;
+  init_config -> targets;
+  targets -> workspace;
+  workspace -> charter;
+  charter -> sources_dir;
+  sources_dir -> skills_dir;
+  skills_dir -> context;
+
+  context -> task_type;
+  task_type -> new_req [label="新需求"];
+  task_type -> legacy [label="已有代码"];
+  task_type -> refactor [label="重构"];
+
+  new_req -> collect_evidence;
+  legacy -> collect_evidence;
+  refactor -> read_existing;
+  read_existing -> run_verify [lhead=cluster_bdd, label="契约不变时直接回归"];
+
+  collect_evidence -> discover;
+  discover -> discovery_ok;
+  discovery_ok -> enrich_discovery [label="否"];
+  enrich_discovery -> collect_evidence;
+  discovery_ok -> human_confirm [label="是"];
+
+  human_confirm -> map_design;
+  map_design -> target_rule;
+  target_rule -> flow_rule;
+  flow_rule -> contract;
+  contract -> contract_gate;
+  contract_gate -> fix_contract [label="否"];
+  fix_contract -> contract;
+  contract_gate -> feature_review [label="是"];
+
+  feature_review -> write_steps;
+  write_steps -> bdd_layout;
+  bdd_layout -> implement_code;
+  implement_code -> run_verify;
+  run_verify -> report_gate;
+  report_gate -> fix_steps [label="否"];
+  fix_steps -> write_steps;
+  report_gate -> evidence_review [label="是"];
+
+  evidence_review -> lint_rules;
+  lint_rules -> lint;
+  lint -> lint_gate;
+  lint_gate -> fix_code [label="否"];
+  fix_code -> implement_code;
+  lint_gate -> check [label="是"];
+  check -> check_items;
+  check_items -> check_gate;
+  check_gate -> fix_governance [label="否"];
+  fix_governance -> contract;
+  check_gate -> done [label="是"];
+
+  targets -> api_team [ltail=cluster_init, lhead=cluster_collab, label="约束工作区"];
+  api_team -> shared_domain;
+  web_team -> shared_domain;
+  third_team -> shared_domain;
+  e2e_team -> shared_domain;
+  shared_domain -> shared_map;
+  shared_map -> map_design [ltail=cluster_collab, lhead=cluster_contract, label="统一命名进入契约"];
+}

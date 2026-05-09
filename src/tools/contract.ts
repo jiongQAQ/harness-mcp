@@ -49,10 +49,22 @@ export async function executeContract(input: ContractInput): Promise<string> {
   const loaded = await loadConfig(root);
   if (!loaded) return formatMissingHarnessConfig(root);
 
-  const target = resolveTargetFile(loaded.projectRoot, loaded.specDirAbs, input.file, input.kind);
+  const target = resolveTargetFile(
+    loaded.projectRoot,
+    loaded.specDirAbs,
+    input.file,
+    input.kind,
+    loaded.config.targets,
+    loaded.config.workspace?.target,
+  );
   if (!target.ok) return target.message;
 
-  const mapValidation = await validateMapForContract(input, loaded.specDirAbs);
+  const mapValidation = await validateMapForContract(
+    input,
+    loaded.specDirAbs,
+    loaded.config.targets,
+    loaded.config.workspace?.target,
+  );
   if (!mapValidation.ok) return mapValidation.message;
 
   const featureValidation = await validateFeatureForContract(
@@ -103,8 +115,19 @@ export async function executeContract(input: ContractInput): Promise<string> {
 async function validateMapForContract(
   input: ContractInput,
   specDirAbs: string,
+  targets: readonly string[],
+  workspaceTarget?: string,
 ): Promise<{ ok: true } | { ok: false; message: string }> {
-  const parsed = await loadOrParseContractMap(input.map_content, specDirAbs);
+  const idParts = parseTargetedId(input.id);
+  if (!idParts) return { ok: false, message: `${input.kind} id 必须使用 <target>.<domain>.<name>: ${input.id}` };
+  if (!targets.includes(idParts.target)) {
+    return { ok: false, message: `${input.kind} id 的 target "${idParts.target}" 未在 harness.yaml targets 中声明` };
+  }
+  if (workspaceTarget && idParts.target !== workspaceTarget) {
+    return { ok: false, message: `workspace.target=${workspaceTarget} 不能写 target ${idParts.target}` };
+  }
+
+  const parsed = await loadOrParseContractMap(input.map_content, specDirAbs, targets);
   if (!parsed.ok) return { ok: false, message: parsed.message };
 
   if (input.kind === "capability") {
@@ -127,6 +150,7 @@ async function validateMapForContract(
 async function loadOrParseContractMap(
   mapContent: string | undefined,
   specDirAbs: string,
+  targets: readonly string[],
 ): Promise<
   | {
       ok: true;
@@ -136,7 +160,7 @@ async function loadOrParseContractMap(
   | { ok: false; message: string }
 > {
   if (mapContent) {
-    const parsed = parseCapabilityMapContent(mapContent);
+    const parsed = parseCapabilityMapContent(mapContent, targets);
     if (!parsed.ok) {
       return { ok: false, message: parsed.error };
     }
@@ -147,7 +171,7 @@ async function loadOrParseContractMap(
     };
   }
 
-  const loaded = await loadCapabilityMap(specDirAbs);
+  const loaded = await loadCapabilityMap(specDirAbs, targets);
   if (!loaded.exists) {
     return {
       ok: false,
@@ -211,6 +235,8 @@ function resolveTargetFile(
   specDirAbs: string,
   file: string,
   kind: "capability" | "flow",
+  targets: readonly string[],
+  workspaceTarget?: string,
 ): { ok: true; abs: string; fileRel: string } | { ok: false; message: string } {
   if (isAbsolute(file)) return { ok: false, message: "file 必须是 spec_dir 内的相对路径" };
   if (file.includes("\\")) return { ok: false, message: "file 不能包含反斜杠,请使用 / 分隔路径" };
@@ -219,11 +245,18 @@ function resolveTargetFile(
   if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
     return { ok: false, message: "file 不能包含空路径段、. 或 .." };
   }
-  if (kind === "capability" && (segments[0] !== "features" || segments.length < 3)) {
-    return { ok: false, message: "业务 feature 必须放在 features/<业务域>/ 下" };
+  const target = segments[1];
+  if (kind === "capability" && (segments[0] !== "features" || segments.length < 4)) {
+    return { ok: false, message: "业务 feature 必须放在 features/<target>/<domain>/ 下" };
   }
-  if (kind === "flow" && segments[0] !== "flows") {
-    return { ok: false, message: "flow feature 必须放在 flows/ 下" };
+  if (kind === "flow" && (segments[0] !== "flows" || segments.length < 4)) {
+    return { ok: false, message: "flow feature 必须放在 flows/<target>/<domain>/ 下" };
+  }
+  if (!target || !targets.includes(target)) {
+    return { ok: false, message: `file target "${target ?? ""}" 未在 harness.yaml targets 中声明` };
+  }
+  if (workspaceTarget && target !== workspaceTarget) {
+    return { ok: false, message: `workspace.target=${workspaceTarget} 不能写 target ${target}` };
   }
 
   const abs = resolve(specDirAbs, file);
@@ -233,4 +266,12 @@ function resolveTargetFile(
   }
 
   return { ok: true, abs, fileRel: relative(projectRoot, abs) };
+}
+
+function parseTargetedId(id: string): { target: string; domain: string } | null {
+  const parts = id.split(".");
+  if (parts.length < 3 || parts.some((part) => part.trim() === "")) return null;
+  const [target, domain] = parts;
+  if (!target || !domain) return null;
+  return { target, domain };
 }
