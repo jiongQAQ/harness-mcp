@@ -13,38 +13,48 @@
 - 前端、后端、第三方服务、E2E 各自命名，同一个业务能力对不齐。
 - 需求变更后，很难知道影响了哪些能力、规则、场景和测试。
 
-## 最短路径
+## 核心流程
 
-第一次接入：
-
-```text
-guide({ "topic": "new-project" })
-init({ "mode": "new", "targets": ["api", "web", "e2e"] })
-project_context({})
-```
-
-旧项目补契约：
+`harness-mcp` 的工作方式是先沉淀业务事实，再生成业务契约，最后用测试报告和治理检查证明实现没有偏离契约。
 
 ```text
-guide({ "topic": "legacy-project" })
-init({ "mode": "legacy", "targets": ["api"] })
-project_context({})
-discover({ ... })
+业务来源 -> 业务发现 -> 人工确认 -> 契约落地 -> 测试和实现 -> 验证 -> 治理检查
 ```
 
-新增或修改业务：
+对应到工具链：
 
 ```text
-read_source/read_contract -> discover -> 人工确认 -> contract -> verify -> lint -> check
+read_source/read_contract -> discover -> contract -> verify -> lint -> check
 ```
 
-完整链路：
+其中 `Feature Contract Review` 用来审 feature 是否表达了正确业务规则；`Step Evidence Review` 用来审 step definitions 的断言是否真的证明了 Then。
 
-```text
-init -> project_context -> discover -> 人工确认 -> contract -> Feature Contract Review -> 写测试和实现 -> verify -> Step Evidence Review -> lint -> check
-```
+## 接入方式
 
-工具边界：
+新项目从 0 接入：
+
+1. 使用 `guide` 查看新项目接入流程。
+2. 使用 `init` 创建最小 `harness.yaml` 和 `harness/` 骨架。
+3. 使用 `project_context` 确认目录、章程、来源、能力地图和 AI 指引。
+4. 先沉淀第一份业务来源，再进入 `discover`。
+
+旧项目补业务契约：
+
+1. 使用 `guide` 查看旧项目补契约流程。
+2. 使用 `init` 创建兼容旧项目的 harness 骨架。
+3. 从真实入口方法、调用链、SQL、现有测试中推导业务来源。
+4. 使用 `discover` 输出业务规则、状态变化、副作用、例子、证据和待确认问题。
+5. 人工确认后，再用 `contract` 写入能力地图和 feature。
+
+日常新增或修改业务：
+
+1. 先读取已有来源和契约，确认本次影响范围。
+2. 用 `discover` 做业务发现，不直接写 feature。
+3. 业务边界确认后，用 `contract` 更新契约。
+4. 写实现和 BDD step definitions。
+5. 用 `verify`、`lint`、`check` 做交付前验证。
+
+## 工具边界
 
 | 工具 | 作用 |
 |---|---|
@@ -57,25 +67,20 @@ init -> project_context -> discover -> 人工确认 -> contract -> Feature Contr
 | `lint` | 执行项目自定义代码质量规则和宿主项目 lint 命令 |
 | `check` | 只检查 harness 契约治理，不替代代码 lint |
 
-## 什么时候用哪个 guide
+## 引导主题
 
-格式不确定时不要猜，先查 `guide`：
+`guide` 是给 AI 和开发者看的任务入口说明。它不读取当前项目，只解释某类任务应该走什么流程、使用哪些工具、遵守哪些目录和契约规则。
 
-- `guide({ "topic": "new-project" })`
-- `guide({ "topic": "legacy-project" })`
-- `guide({ "topic": "new-feature" })`
-- `guide({ "topic": "change-feature" })`
-- `guide({ "topic": "frontend-backend-e2e" })`
-- `guide({ "topic": "verify-failed" })`
-- `guide({ "topic": "capability-map" })`
-- `guide({ "topic": "harness-yaml" })`
+常用主题：
 
-如果 `capability-map.yaml` 报 schema 错，不要一个格式一个格式试。正确做法是：
-
-```text
-guide({ "topic": "capability-map" })
-contract({ ..., "map_content": "<完整正确 YAML>" })
-```
+- `new-project`：新项目第一次接入。
+- `legacy-project`：旧项目补业务契约。
+- `new-feature`：新增业务能力。
+- `change-feature`：修改已有业务能力。
+- `frontend-backend-e2e`：前端、后端、E2E 多目标协作。
+- `verify-failed`：BDD 验证失败后的处理路径。
+- `capability-map`：能力地图结构说明。
+- `harness-yaml`：项目配置说明。
 
 ## 项目结构
 
