@@ -4,7 +4,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
-import { Glob } from "bun";
+import { scanFiles } from "./glob.ts";
 
 export interface Capability {
   /** 唯一标识 — 来自 # capability: 注释,缺失则用文件相对路径(去 .feature) */
@@ -48,10 +48,9 @@ export async function discoverCapabilities(
     return [];
   }
 
-  const glob = new Glob("**/*.feature");
   const result: Capability[] = [];
 
-  for await (const rel of glob.scan({ cwd: specDirAbs, onlyFiles: true })) {
+  for (const rel of await scanFiles(specDirAbs, "**/*.feature")) {
     const abs = resolve(specDirAbs, rel);
     // charter 目录跳过
     if (abs.startsWith(charterDirAbs + "/")) continue;

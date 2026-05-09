@@ -4,7 +4,6 @@
 import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import { Glob } from "bun";
 import { z } from "zod";
 import { loadCapabilityMap, normalizeMapRelPath } from "../capability_map.ts";
 import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
@@ -14,6 +13,7 @@ import {
   runBuiltinConstraints,
   SUPPORTED_CONSTRAINT_STEP_EXAMPLES,
 } from "../constraint_runner.ts";
+import { scanFiles } from "../glob.ts";
 import { resolveProjectRoot } from "../project.ts";
 import { runShell } from "../runner.ts";
 import { parseReport, type ParsedReport } from "../parsers/report.ts";
@@ -25,7 +25,7 @@ import {
 } from "../sources.ts";
 
 export const CheckInputSchema = z.object({
-  path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
+  path: z.string().optional().describe("项目根目录;不传则从当前目录向上查找 harness.yaml 或 .git"),
   dryRun: z.boolean().optional().default(false).describe("只列出约束和命令,不实际运行"),
   raw: z.boolean().optional().describe("true 返回 JSON,false/缺省 返回格式化文本"),
 });
@@ -275,9 +275,8 @@ async function collectBusinessFeatureFiles(
 ): Promise<{ fileRel: string; specRel: string; content: string }[]> {
   const featuresDir = resolve(specDirAbs, "features");
   if (!existsSync(featuresDir)) return [];
-  const glob = new Glob("**/*.feature");
   const result: { fileRel: string; specRel: string; content: string }[] = [];
-  for await (const rel of glob.scan({ cwd: featuresDir, onlyFiles: true })) {
+  for (const rel of await scanFiles(featuresDir, "**/*.feature")) {
     const abs = resolve(featuresDir, rel);
     result.push({
       fileRel: relative(projectRoot, abs),
@@ -294,10 +293,9 @@ async function collectFeatureLayoutChecks(
   targets: readonly string[],
 ): Promise<StaticCheck[]> {
   if (!existsSync(specDirAbs)) return [];
-  const glob = new Glob("**/*.feature");
   const issues: string[] = [];
   const targetSet = new Set(targets);
-  for await (const rel of glob.scan({ cwd: specDirAbs, onlyFiles: true })) {
+  for (const rel of await scanFiles(specDirAbs, "**/*.feature")) {
     const normalized = rel.replace(/\\/g, "/");
     const segments = normalized.split("/");
     const [top] = segments;
@@ -342,9 +340,8 @@ async function collectCharterFormatChecks(
     }];
   }
 
-  const glob = new Glob("**/*.feature");
   const issues: string[] = [];
-  for await (const rel of glob.scan({ cwd: charterDirAbs, onlyFiles: true })) {
+  for (const rel of await scanFiles(charterDirAbs, "**/*.feature")) {
     issues.push(relative(projectRoot, resolve(charterDirAbs, rel)));
   }
 
@@ -400,9 +397,8 @@ async function collectMapAlignmentChecks(
     }
   }
   if (existsSync(flowDir)) {
-    const glob = new Glob("**/*.feature");
     const mapFlowFiles = new Set(map.flows.map((flow) => normalizeMapRelPath(flow.file)));
-    for await (const rel of glob.scan({ cwd: flowDir, onlyFiles: true })) {
+    for (const rel of await scanFiles(flowDir, "**/*.feature")) {
       const specRel = `flows/${rel}`.replace(/\\/g, "/");
       if (!mapFlowFiles.has(normalizeMapRelPath(specRel))) {
         issues.push(`${relative(projectRoot, resolve(flowDir, rel))}: flow 未在 capability-map.yaml 中声明`);
@@ -423,9 +419,8 @@ async function collectHarnessBddImplementationChecks(
   specDirAbs: string,
 ): Promise<StaticCheck[]> {
   if (!existsSync(specDirAbs)) return [];
-  const glob = new Glob("**/*");
   const issues: string[] = [];
-  for await (const rel of glob.scan({ cwd: specDirAbs, onlyFiles: true })) {
+  for (const rel of await scanFiles(specDirAbs, "**/*")) {
     const normalized = rel.replace(/\\/g, "/").toLowerCase();
     const parts = normalized.split("/");
     const fileName = parts.at(-1) ?? "";
@@ -460,9 +455,8 @@ export async function discoverConstraints(
   const constraintsDirAbs = resolve(specDirAbs, "constraints");
   if (!existsSync(constraintsDirAbs)) return [];
 
-  const glob = new Glob("**/*.feature");
   const result: ConstraintSpec[] = [];
-  for await (const rel of glob.scan({ cwd: constraintsDirAbs, onlyFiles: true })) {
+  for (const rel of await scanFiles(constraintsDirAbs, "**/*.feature")) {
     const abs = resolve(constraintsDirAbs, rel);
     const content = await readFile(abs, "utf-8");
     const st = await stat(abs);

@@ -10,9 +10,9 @@ import {
   Parser,
 } from "@cucumber/gherkin";
 import { IdGenerator } from "@cucumber/messages";
-import { Glob } from "bun";
 import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
+import { matchesGlob, scanFiles as scanGlobFiles } from "./glob.ts";
 import { runShell, type RunResult } from "./runner.ts";
 
 export interface BuiltinConstraintSource {
@@ -406,9 +406,8 @@ async function runStep(world: LintWorld, step: ParsedStep): Promise<void> {
 
 async function scanFiles(world: LintWorld, pattern: string): Promise<void> {
   const files: string[] = [];
-  const glob = new Glob(pattern);
-  for await (const file of glob.scan({ cwd: world.cwd, onlyFiles: true })) {
-    const rel = file.replaceAll("\\", "/");
+  for (const file of await scanGlobFiles(world.cwd, pattern)) {
+    const rel = file;
     if (shouldSkipPath(rel)) continue;
     files.push(resolve(world.cwd, file));
   }
@@ -422,7 +421,6 @@ async function scanAddedDiffLines(
   world: LintWorld,
   pattern: string,
 ): Promise<void> {
-  const matcher = new Glob(pattern);
   const lines: LintMatch[] = [];
 
   const check = await runShell("git rev-parse --is-inside-work-tree", {
@@ -441,7 +439,7 @@ async function scanAddedDiffLines(
     timeoutMs: 15_000,
   });
   if (diff.stdout) {
-    lines.push(...parseAddedLinesFromDiff(diff.stdout, world.cwd, matcher));
+    lines.push(...parseAddedLinesFromDiff(diff.stdout, world.cwd, pattern));
   }
 
   const untracked = await runShell("git ls-files --others --exclude-standard", {
@@ -450,7 +448,7 @@ async function scanAddedDiffLines(
   });
   for (const rel of untracked.stdout.split(/\r?\n/).filter(Boolean)) {
     const normalized = rel.replaceAll("\\", "/");
-    if (shouldSkipPath(normalized) || !matcher.match(normalized)) continue;
+    if (shouldSkipPath(normalized) || !matchesGlob(normalized, pattern)) continue;
     try {
       const content = await readFile(resolve(world.cwd, rel), "utf-8");
       const fileLines = content.split(/\r?\n/);
@@ -591,7 +589,7 @@ function shouldSkipPath(rel: string): boolean {
 function parseAddedLinesFromDiff(
   diff: string,
   cwd: string,
-  matcher: Glob,
+  pattern: string,
 ): LintMatch[] {
   const matches: LintMatch[] = [];
   let currentFile = "";
@@ -600,7 +598,7 @@ function parseAddedLinesFromDiff(
   for (const rawLine of diff.split(/\r?\n/)) {
     if (rawLine.startsWith("+++ ")) {
       currentFile = normalizeDiffPath(rawLine.slice(4));
-      if (shouldSkipPath(currentFile) || !matcher.match(currentFile)) {
+      if (shouldSkipPath(currentFile) || !matchesGlob(currentFile, pattern)) {
         currentFile = "";
       }
       continue;

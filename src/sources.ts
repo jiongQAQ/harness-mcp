@@ -7,9 +7,9 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import { Glob } from "bun";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
+import { scanFiles } from "./glob.ts";
 
 export interface SourceDocument {
   fileRel: string;
@@ -74,10 +74,9 @@ export async function discoverSources(
   const sourcesDir = resolve(specDirAbs, "sources");
   if (!existsSync(sourcesDir)) return [];
 
-  const glob = new Glob("**/*.md");
   const result: SourceDocument[] = [];
-  for await (const rel of glob.scan({ cwd: sourcesDir, onlyFiles: true })) {
-    const normalized = rel.replace(/\\/g, "/");
+  for (const rel of await scanFiles(sourcesDir, "**/*.md")) {
+    const normalized = rel;
     const abs = resolve(sourcesDir, rel);
     const content = await readFile(abs, "utf-8");
     const directFile = !normalized.includes("/");

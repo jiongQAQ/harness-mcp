@@ -4,17 +4,17 @@
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { relative } from "node:path";
-import { Glob } from "bun";
 import { z } from "zod";
 import { discoverAgentSkills } from "../agent_skills.ts";
 import { loadCapabilityMap } from "../capability_map.ts";
 import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import { discoverCapabilities } from "../capability.ts";
+import { scanFiles } from "../glob.ts";
 import { resolveProjectRoot } from "../project.ts";
 import { discoverSources } from "../sources.ts";
 
 export const ContextInputSchema = z.object({
-  path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
+  path: z.string().optional().describe("项目根目录;不传则从当前目录向上查找 harness.yaml 或 .git"),
   raw: z.boolean().optional().describe("true 返回 JSON,false/缺省 返回格式化文本"),
 });
 
@@ -214,9 +214,8 @@ async function readCharter(
   projectRoot: string,
 ): Promise<CharterFile[]> {
   if (!existsSync(charterDirAbs)) return [];
-  const glob = new Glob("**/*.md");
   const files: CharterFile[] = [];
-  for await (const rel of glob.scan({ cwd: charterDirAbs, onlyFiles: true })) {
+  for (const rel of await scanFiles(charterDirAbs, "**/*.md")) {
     const abs = `${charterDirAbs}/${rel}`;
     const content = await readFile(abs, "utf-8");
     files.push({ fileRel: relative(projectRoot, abs), content });

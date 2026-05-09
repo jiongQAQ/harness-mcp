@@ -1,8 +1,10 @@
-#!/usr/bin/env bun
 import { createServer } from "./server.ts";
 
 const server = createServer();
 
-await server.start({
+server.start({
   transportType: "stdio",
+}).catch((error) => {
+  console.error(error);
+  process.exit(1);
 });

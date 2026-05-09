@@ -4,11 +4,11 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import { Glob } from "bun";
 import { z } from "zod";
 import { loadCapabilityMap } from "../capability_map.ts";
 import { discoverCapabilities, matchCapabilities } from "../capability.ts";
 import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
+import { scanFiles } from "../glob.ts";
 import { resolveProjectRoot } from "../project.ts";
 
 export const ReadInputSchema = z.object({
@@ -74,9 +74,8 @@ export async function executeRead(input: ReadInput): Promise<string> {
 async function searchFeatures(projectRoot: string, specDirAbs: string, query: string) {
   if (!existsSync(specDirAbs)) return [];
   const q = query.toLowerCase();
-  const glob = new Glob("**/*.feature");
   const results: { file: string; line: number; text: string }[] = [];
-  for await (const rel of glob.scan({ cwd: specDirAbs, onlyFiles: true })) {
+  for (const rel of await scanFiles(specDirAbs, "**/*.feature")) {
     const abs = resolve(specDirAbs, rel);
     const lines = (await readFile(abs, "utf-8")).split(/\r?\n/);
     lines.forEach((text, index) => {

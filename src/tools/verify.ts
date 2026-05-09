@@ -4,7 +4,6 @@
 import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import { Glob } from "bun";
 import { z } from "zod";
 import {
   buildBddCommand,
@@ -18,6 +17,7 @@ import { discoverCapabilities, matchCapabilities } from "../capability.ts";
 import { loadCapabilityMap, normalizeMapRelPath } from "../capability_map.ts";
 import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import { captureGitDiff } from "../git.ts";
+import { scanFiles } from "../glob.ts";
 import { parseReport, type ParsedReport } from "../parsers/report.ts";
 import { resolveProjectRoot } from "../project.ts";
 import {
@@ -216,9 +216,8 @@ async function discoverFlows(projectRoot: string, specDirAbs: string, targets: r
       flowIdByFile.set(normalizeMapRelPath(flow.file), flow.id);
     }
   }
-  const glob = new Glob("**/*.feature");
   const flows: FlowSpec[] = [];
-  for await (const rel of glob.scan({ cwd: flowDirAbs, onlyFiles: true })) {
+  for (const rel of await scanFiles(flowDirAbs, "**/*.feature")) {
     const abs = resolve(flowDirAbs, rel);
     const content = await readFile(abs, "utf-8");
     const title = content.match(/^\s*(?:Feature|功能|機能|Característica):\s*(.+)$/m)?.[1]?.trim() ?? rel.replace(/\.feature$/, "");

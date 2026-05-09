@@ -10,7 +10,7 @@ import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
 import { resolveProjectRoot } from "../project.ts";
 
 export const ReadSourceInputSchema = z.object({
-  path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
+  path: z.string().optional().describe("项目根目录;不传则从当前目录向上查找 harness.yaml 或 .git"),
   file: z.string().optional().describe("读取 sources/YYYY-MM-DD-xxx.md"),
   query: z.string().optional().describe("搜索 harness/sources 下的 Markdown 内容"),
   raw: z.boolean().optional(),

@@ -4,16 +4,16 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { Glob } from "bun";
 import { z } from "zod";
 import { formatMissingHarnessConfig, loadConfig } from "../config.ts";
+import { scanFiles } from "../glob.ts";
 import { loadLintRules, type LintRuleEntry } from "../lint_rules.ts";
 import { parseReport, type ParsedReport } from "../parsers/report.ts";
 import { resolveProjectRoot } from "../project.ts";
 import { runShell } from "../runner.ts";
 
 export const LintInputSchema = z.object({
-  path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
+  path: z.string().optional().describe("项目根目录;不传则从当前目录向上查找 harness.yaml 或 .git"),
   scope: z.enum(["diff", "all"]).optional().default("diff").describe("diff 只扫本次新增/修改行;all 扫描源文件全文"),
   dryRun: z.boolean().optional().default(false),
   raw: z.boolean().optional(),
@@ -169,9 +169,8 @@ async function collectAddedSourceLines(projectRoot: string): Promise<LintCandida
 
 async function collectAllSourceLines(projectRoot: string): Promise<LintCandidate[]> {
   if (!existsSync(projectRoot)) return [];
-  const glob = new Glob("**/*");
   const candidates: LintCandidate[] = [];
-  for await (const rel of glob.scan({ cwd: projectRoot, onlyFiles: true })) {
+  for (const rel of await scanFiles(projectRoot, "**/*")) {
     const normalized = normalizePath(rel);
     if (!isSourcePath(normalized)) continue;
     try {

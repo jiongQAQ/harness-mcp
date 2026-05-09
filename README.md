@@ -516,6 +516,46 @@ MCP 只做索引，不负责加载、安装或校验 skill 内容。
 - `harness/` 下是否混入 BDD 实现代码。
 - 项目配置的 constraints 是否通过。
 
+## 本地接入
+
+推荐把 `harness-mcp` 作为项目级 MCP 接入。这样团队成员在项目根目录打开 Claude Code 时，MCP 默认作用于当前项目，不需要在配置里写每个人本机的绝对路径。
+
+运行要求：Node.js 20+。
+
+项目根目录执行：
+
+```bash
+claude mcp add --scope project --transport stdio harness -- npx -y harness-mcp
+```
+
+生成的 `.mcp.json` 类似：
+
+```json
+{
+  "mcpServers": {
+    "harness": {
+      "command": "npx",
+      "args": ["-y", "harness-mcp"]
+    }
+  }
+}
+```
+
+如果还没有发布到 npm，可以临时从 GitHub 运行：
+
+```bash
+claude mcp add --scope project --transport stdio harness -- bunx github:jiongQAQ/harness-mcp
+```
+
+`harness-mcp` 默认从当前工作目录向上查找 `harness.yaml`，如果项目还没有初始化，则使用当前 Git 仓库根目录。`HARNESS_PROJECT_ROOT` 只作为高级场景的显式覆盖，例如 CI、非项目级 MCP 客户端或调试固定目录。
+
+首次接入后，让 AI 调用：
+
+```text
+init
+project_context
+```
+
 ## 安装与开发
 
 ```bash
@@ -537,16 +577,11 @@ Claude Code 配置示例：
   "mcpServers": {
     "harness": {
       "command": "bun",
-      "args": ["run", "/abs/path/to/harness-mcp/src/index.ts"],
-      "env": {
-        "HARNESS_PROJECT_ROOT": "/abs/path/to/your-project"
-      }
+      "args": ["run", "/abs/path/to/harness-mcp/src/index.ts"]
     }
   }
 }
 ```
-
-`HARNESS_PROJECT_ROOT` 指向包含 `harness.yaml` 的宿主项目根目录。不设置时使用 MCP Server 当前工作目录。
 
 ## 本仓库验证
 

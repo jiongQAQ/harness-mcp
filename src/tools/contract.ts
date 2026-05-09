@@ -30,7 +30,7 @@ import {
 } from "../review_protocol.ts";
 
 export const ContractInputSchema = z.object({
-  path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
+  path: z.string().optional().describe("项目根目录;不传则从当前目录向上查找 harness.yaml 或 .git"),
   kind: z.enum(["capability", "flow"]).default("capability"),
   id: z.string().min(1).describe("capability id 或 flow id"),
   file: z.string().min(1).describe("相对 spec_dir 的 .feature 文件路径"),

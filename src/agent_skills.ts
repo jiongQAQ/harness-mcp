@@ -4,8 +4,8 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import { Glob } from "bun";
 import { parse as parseYaml } from "yaml";
+import { scanFiles } from "./glob.ts";
 
 export interface AgentSkillIndexItem {
   name: string;
@@ -20,9 +20,8 @@ export async function discoverAgentSkills(
   const skillsDir = resolve(specDirAbs, "agent-skills");
   if (!existsSync(skillsDir)) return [];
 
-  const glob = new Glob("*/SKILL.md");
   const skills: AgentSkillIndexItem[] = [];
-  for await (const rel of glob.scan({ cwd: skillsDir, onlyFiles: true })) {
+  for (const rel of await scanFiles(skillsDir, "*/SKILL.md")) {
     const [name] = rel.split("/");
     if (!name) continue;
 

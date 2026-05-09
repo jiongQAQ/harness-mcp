@@ -10,7 +10,7 @@ import { resolveProjectRoot } from "../project.ts";
 const TargetNameSchema = z.string().regex(/^[a-z0-9_-]+$/, "target 只能包含小写字母、数字、短横线或下划线");
 
 export const InitInputSchema = z.object({
-  path: z.string().optional().describe("项目根目录;不传则用 HARNESS_PROJECT_ROOT 或 cwd"),
+  path: z.string().optional().describe("项目根目录;不传则从当前目录向上查找 harness.yaml 或 .git"),
   mode: z.enum(["new", "legacy", "workspace"]).optional().default("new").describe("new 新项目;legacy 旧项目补契约;workspace 子仓库/单目标工作区"),
   targets: z.array(TargetNameSchema).optional().describe("项目允许的验证目标,例如 api/web/e2e"),
   target: TargetNameSchema.optional().describe("workspace 模式下当前工作区允许写入的 target"),
