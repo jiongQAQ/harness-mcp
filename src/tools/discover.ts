@@ -165,7 +165,9 @@ function analyzeDiscovery(input: DiscoverInput): DiscoveryCheck[] {
   checks.push({
     id: "discovery.questions",
     level: input.questions.length > 0 ? "pass" : "warn",
-    message: input.questions.length > 0 ? "待确认问题已显式列出" : "没有待确认问题;若来自代码推断,请确认是否存在未确认业务规则",
+    message: input.questions.length > 0
+      ? "待确认问题已显式列出;请确保这些问题已经先查过 PRD、代码、配置、枚举、注释、调用链和现有测试"
+      : "没有待确认问题;若来自代码推断,请确认是否存在材料无法判断的业务语义",
     detail: input.questions.join("; ") || undefined,
   });
 

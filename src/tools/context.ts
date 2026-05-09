@@ -180,7 +180,8 @@ export async function executeContext(input: ContextInput): Promise<string> {
   lines.push("  • harness.yaml 必须声明 targets;target 是验证目标,例如 api/web/mobile/thirdparty/e2e");
   lines.push("  • 业务 feature 放在 harness/features/<target>/<domain>/<能力>.feature");
   lines.push("  • flow 放在 harness/flows/<target>/<domain>/<流程>.feature");
-  lines.push("  • 新建业务 feature 前先 discover,让 AI 输出业务入口、调用链、业务规则、例子、待确认问题和证据来源");
+  lines.push("  • 新建业务 feature 前先 discover,让 AI 输出业务入口、调用链、业务规则、例子、证据来源和真正无法从材料判断的待确认问题");
+  lines.push("  • AI 提待确认问题前必须先查 PRD、代码、配置、枚举、注释、调用链和现有测试;能回答的先写入已确认规则");
   lines.push("  • 编写或修改 .feature 前先调用 guide({ topic: \"gherkin-official\" }),对齐 Cucumber 官方结构和 harness 模板");
   lines.push("  • capability-map.yaml 固定 id/file/entrypoint/intent;id 使用 <target>.<domain>.<action>");
   lines.push("  • 一个业务 feature 只承诺一个可独立验证的业务结果;多阶段编排写 flows");
