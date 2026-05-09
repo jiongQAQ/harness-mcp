@@ -244,7 +244,6 @@ async function collectSourceTraceChecks(
 
   const ids = [
     "sources.files.date_name",
-    "feature_sources.required",
     "feature_sources.format",
     "feature_sources.exists",
     "feature_sources.timeline_order",

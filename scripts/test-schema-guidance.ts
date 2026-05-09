@@ -115,6 +115,12 @@ console.log("=== capability-map guide ===\n" + guide + "\n");
 assert(guide.includes("domains:"), "guide capability-map should document domains schema");
 assert(guide.includes("contract({"), "guide capability-map should show repair tool call");
 
+const officialGherkinGuide = await executeHelp({ topic: "gherkin-official" });
+console.log("=== official gherkin guide ===\n" + officialGherkinGuide + "\n");
+assert(officialGherkinGuide.includes("https://cucumber.io/docs/gherkin/reference/"), "official guide should link Cucumber reference");
+assert(officialGherkinGuide.includes("规则: <一条业务规则>"), "official guide should show Rule-based example shape");
+assert(officialGherkinGuide.includes("# sources:"), "official guide should include harness sources template");
+
 const configGuide = await executeHelp({ topic: "harness-yaml" });
 console.log("=== harness-yaml guide ===\n" + configGuide + "\n");
 assert(configGuide.includes("harness.yaml"), "guide harness-yaml should document config file");

@@ -17,6 +17,7 @@ export const HELP_TOPICS = [
   "change-feature",
   "frontend-backend-e2e",
   "verify-failed",
+  "gherkin-official",
   "tools",
   "init",
   "discover",

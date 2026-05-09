@@ -262,20 +262,28 @@ source 文件不需要 frontmatter，可以是普通 Markdown：
 - 该行为是产品规则，还是历史实现偶然结果。
 ```
 
-feature 的 `规则/Rule` 下必须使用固定注释块声明来源：
+feature 可以在文件头统一声明默认来源。多数情况下只写这一处即可，避免每个规则重复同一份来源：
 
 ```gherkin
-规则: 优惠计算失败时不创建订单
-  # sources:
-  #   current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-  #   timeline:
-  #     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
-  #     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+# language: zh-CN
+# capability: api.order.create
+# entrypoint: OrderController#create
+# sources:
+#   current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+#   timeline:
+#     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
+#     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+@order @create
 
-  场景: 优惠服务返回失败
-    假设 客户已登录
-    当 客户使用不可计算的优惠下单
-    那么 不应创建订单
+功能: 创建订单
+
+  规则: 优惠计算失败时不创建订单
+    优惠服务失败时，订单创建必须整体回滚。
+
+    场景: 优惠服务返回失败
+      假设 客户已登录
+      当 客户使用不可计算的优惠下单
+      那么 不应创建订单
 ```
 
 规则：
@@ -283,12 +291,25 @@ feature 的 `规则/Rule` 下必须使用固定注释块声明来源：
 - 只认 `# sources:`，不认 `# source:`、`# 需求来源:` 或其他变体。
 - `current` 必须出现在 `timeline` 中。
 - `timeline` 按 source 文件日期从旧到新排列。
-- 如果单个场景的来源不同，可以在 `场景/Scenario` 下写自己的 `# sources:` 块。
-- `contract` 写入前会硬校验；`check` 会全量扫描，防止手写绕过。
+- `# sources:` 不是必填；`discover.evidence` 才是写 feature 前的业务依据门禁。
+- 如果某条规则或场景来源不同，可以在 `规则/Rule` 或 `场景/Scenario` 下写局部 `# sources:` 覆盖。
+- 局部 `# sources:` 写了就必须格式正确；规则级来源必须在第一个场景之前，场景级来源必须在第一个步骤之前。
+- `contract` 和 `check` 只会拒绝格式错误、文件不存在、timeline 乱序等问题，不会因为缺少 `# sources:` 拒绝 feature。
 
 旧项目接入时，可以先把代码推断沉淀为 source，再逐步补人工确认 source。
 
 ## Feature 契约
+
+写 feature 前，先让 AI 调用：
+
+```text
+guide({ "topic": "gherkin-official" })
+```
+
+官方参考：
+
+- Gherkin Reference: https://cucumber.io/docs/gherkin/reference/
+- Gherkin Localisation: https://cucumber.io/docs/gherkin/languages/
 
 `contract` 会一起校验并写入 `capability-map.yaml` 和 `.feature`。能力 feature 应使用 Rule-first 结构：
 
@@ -296,6 +317,10 @@ feature 的 `规则/Rule` 下必须使用固定注释块声明来源：
 # language: zh-CN
 # capability: api.order.create
 # entrypoint: OrderController#create
+# sources:
+#   current: sources/2026-05-08-code-inference-order-create.md#创建订单
+#   timeline:
+#     - sources/2026-05-08-code-inference-order-create.md#创建订单
 @order @create
 
 功能: 创建订单
@@ -310,11 +335,6 @@ feature 的 `规则/Rule` 下必须使用固定注释块声明来源：
     - 无
 
   规则: 有库存商品可以创建订单
-    # sources:
-    #   current: sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单
-    #   timeline:
-    #     - sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单
-
     场景: 客户购买有库存商品
       假设 客户已登录
       而且 商品 "sku-001" 可售库存为 5
@@ -323,11 +343,6 @@ feature 的 `规则/Rule` 下必须使用固定注释块声明来源：
       而且 商品 "sku-001" 的可售库存应减少 2
 
   规则: 库存不足时不能创建订单
-    # sources:
-    #   current: sources/2026-05-08-code-inference-order-create.md#库存不足时不能创建订单
-    #   timeline:
-    #     - sources/2026-05-08-code-inference-order-create.md#库存不足时不能创建订单
-
     场景: 客户购买超过库存数量
       假设 客户已登录
       而且 商品 "sku-002" 可售库存为 1
@@ -347,7 +362,7 @@ Feature Contract Review 只审业务契约：
 |---|---|
 | 能力边界 | 是否只表达一个业务目的 |
 | 入口证据 | 是否有 `# entrypoint` 或 planned 入口 |
-| 来源追溯 | 每个 Rule/Scenario 是否有合法 `# sources:` 块 |
+| 来源追溯 | 是否已有 discover evidence；如写 `# sources:`，格式是否正确 |
 | 规则分组 | 是否用 `规则/Rule` 表达业务分支 |
 | 结构顺序 | Scenario/场景 是否都写在 Rule/规则 下 |
 | 场景覆盖 | 正常、边界、异常、权限是否按需覆盖 |
@@ -507,7 +522,7 @@ MCP 只做索引，不负责加载、安装或校验 skill 内容。
 - feature 是否缺少 `规则/Rule`。
 - Scenario/场景 是否写在第一个 Rule/规则 前。
 - Then 是否过于泛化。
-- Rule/Scenario 是否缺少固定 `# sources:` 来源块。
+- 已写入的 `# sources:` 是否格式正确、文件存在、`timeline` 顺序正确。
 - `sources/` 文件是否按 `YYYY-MM-DD-xxx.md` 命名。
 - `timeline` 是否按日期升序，`current` 是否在 `timeline` 中。
 - 业务 feature 是否放在 `harness/features/<target>/<domain>/` 下。

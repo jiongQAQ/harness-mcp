@@ -181,6 +181,7 @@ export async function executeContext(input: ContextInput): Promise<string> {
   lines.push("  • 业务 feature 放在 harness/features/<target>/<domain>/<能力>.feature");
   lines.push("  • flow 放在 harness/flows/<target>/<domain>/<流程>.feature");
   lines.push("  • 新建业务 feature 前先 discover,让 AI 输出业务入口、调用链、业务规则、例子、待确认问题和证据来源");
+  lines.push("  • 编写或修改 .feature 前先调用 guide({ topic: \"gherkin-official\" }),对齐 Cucumber 官方结构和 harness 模板");
   lines.push("  • capability-map.yaml 固定 id/file/entrypoint/intent;id 使用 <target>.<domain>.<action>");
   lines.push("  • 一个业务 feature 只承诺一个可独立验证的业务结果;多阶段编排写 flows");
   lines.push("  • feature 必须有 # entrypoint,并使用 Rule/规则 分组");
@@ -199,7 +200,7 @@ export async function executeContext(input: ContextInput): Promise<string> {
   lines.push("  • harness/lint/rules.yaml 是行级正则禁用规则;跨行语义检查应接入 commands.lint");
   lines.push("  • 项目公共 Agent Skills 可保存在 harness/agent-skills/<skill-name>/SKILL.md;MCP 只列索引,不自动加载或安装");
   lines.push("  • 业务来源文档放在 harness/sources/YYYY-MM-DD-xxx.md;可来自 PRD、人工确认、会议、工单、代码推断或现有测试");
-  lines.push("  • 每个 Rule/规则 必须有固定 # sources: 注释块,声明 current 和 timeline");
+  lines.push("  • # sources: 可在 feature 文件头统一声明默认来源;Rule/Scenario 只有来源不同时才写局部覆盖");
   lines.push("  • harness.yaml language 缺省 zh-CN,可配置 en;feature 文件头必须匹配 # language");
   lines.push("  • 中文 feature 必须包含: 意图 / 边界 / 待确认;英文 feature 必须包含: Intent / Boundaries / To Confirm");
   lines.push("  • Scenario/场景 必须写在 Rule/规则 下,禁止顶层场景");

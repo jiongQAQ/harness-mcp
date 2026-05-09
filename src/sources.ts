@@ -1,8 +1,8 @@
 /**
  * Source traceability for business contracts.
  *
- * Source files live under harness/sources and feature Rule/Scenario blocks
- * reference them with a fixed YAML-shaped comment block.
+ * Source files live under harness/sources. A feature file may declare an
+ * optional file-level sources block; Rule/Scenario blocks may override it.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -38,7 +38,7 @@ interface SourceBlock {
 }
 
 interface Heading {
-  kind: "rule" | "scenario";
+  kind: "feature" | "rule" | "scenario";
   title: string;
   lineIndex: number;
   lineNumber: number;
@@ -115,50 +115,18 @@ export async function checkFeatureSources(
   specDirAbs: string,
 ): Promise<FeatureSourceResult> {
   const headings = collectHeadings(content);
-  const rules = headings.filter((heading) => heading.kind === "rule");
   const issues: SourceIssue[] = [];
-  const blockByHeading = new Map<number, ParsedBlock>();
+  const featureBlock = parseFeatureHeaderBlock(content, fileRel);
+  issues.push(...featureBlock.issues);
+  if (featureBlock.block) {
+    issues.push(...validateBlock(featureBlock.block, featureHeaderHeading(fileRel), fileRel, specDirAbs));
+  }
 
   for (const heading of headings) {
     const parsed = parseBlockAfterHeading(content, heading);
-    blockByHeading.set(heading.lineIndex, parsed);
     issues.push(...parsed.issues);
     if (parsed.block) {
       issues.push(...validateBlock(parsed.block, heading, fileRel, specDirAbs));
-    }
-  }
-
-  const firstRuleLine = rules[0]?.lineIndex ?? Number.POSITIVE_INFINITY;
-  for (const scenario of headings.filter((heading) => heading.kind === "scenario" && heading.lineIndex < firstRuleLine)) {
-    const scenarioBlock = blockByHeading.get(scenario.lineIndex)!;
-    if (scenarioBlock.block) continue;
-    if (scenarioBlock.present && scenarioBlock.issues.length > 0) continue;
-    issues.push(missingSourcesIssue(scenario, fileRel));
-  }
-
-  for (const [index, rule] of rules.entries()) {
-    const nextRuleLine = rules[index + 1]?.lineIndex ?? Number.POSITIVE_INFINITY;
-    const ruleBlock = blockByHeading.get(rule.lineIndex)!;
-    if (ruleBlock.block) continue;
-    if (ruleBlock.present && ruleBlock.issues.length > 0) continue;
-
-    const scenarios = headings.filter(
-      (heading) =>
-        heading.kind === "scenario" &&
-        heading.lineIndex > rule.lineIndex &&
-        heading.lineIndex < nextRuleLine,
-    );
-
-    if (scenarios.length === 0) {
-      issues.push(missingSourcesIssue(rule, fileRel));
-      continue;
-    }
-
-    for (const scenario of scenarios) {
-      const scenarioBlock = blockByHeading.get(scenario.lineIndex)!;
-      if (scenarioBlock.block) continue;
-      if (scenarioBlock.present && scenarioBlock.issues.length > 0) continue;
-      issues.push(missingSourcesIssue(scenario, fileRel, rule.title));
     }
   }
 
@@ -186,13 +154,13 @@ function collectHeadings(content: string): Heading[] {
   const result: Heading[] = [];
   const lines = content.split(/\r?\n/);
   lines.forEach((line, index) => {
-    const rule = line.match(/^\s*(?:Rule|规则|規則):\s*(.+)$/);
+    const rule = line.match(ruleHeadingRe);
     if (rule?.[1]) {
       result.push({ kind: "rule", title: rule[1].trim(), lineIndex: index, lineNumber: index + 1 });
       return;
     }
 
-    const scenario = line.match(/^\s*(?:Scenario|场景|場景|Escenario):\s*(.+)$/);
+    const scenario = line.match(scenarioHeadingRe);
     if (scenario?.[1]) {
       result.push({ kind: "scenario", title: scenario[1].trim(), lineIndex: index, lineNumber: index + 1 });
     }
@@ -200,22 +168,49 @@ function collectHeadings(content: string): Heading[] {
   return result;
 }
 
-function parseBlockAfterHeading(content: string, heading: Heading): ParsedBlock {
-  const lines = content.split(/\r?\n/);
-  let index = heading.lineIndex + 1;
-  while (index < lines.length && lines[index]!.trim() === "") index++;
+const ruleHeadingRe = /^\s*(?:Rule|规则|規則):\s*(.+)$/;
+const scenarioHeadingRe = /^\s*(?:Scenario|场景|場景|Escenario):\s*(.+)$/;
+const featureHeadingRe = /^\s*(?:Feature|功能|機能|Característica):\s*(.+)$/;
+const englishStepRe = /^(?:Given|When|Then|And|But)\b/;
+const chineseStepRe = /^(?:假设|假如|当|那么|则|并且|而且|但是)/;
 
-  const comments: string[] = [];
-  while (index < lines.length && /^\s*#/.test(lines[index]!)) {
-    comments.push(lines[index]!.replace(/^\s*# ?/, ""));
-    index++;
+function parseFeatureHeaderBlock(content: string, fileRel: string): ParsedBlock {
+  const lines = content.split(/\r?\n/);
+  const featureLine = lines.findIndex((line) => featureHeadingRe.test(line));
+  const end = featureLine === -1 ? lines.length : featureLine;
+  const comments = findSourceCommentBlock(lines, 0, end);
+  const heading = featureHeaderHeading(fileRel);
+
+  if (!comments) {
+    if (hasSourceLikeComment(lines, 0, end)) {
+      return {
+        present: true,
+        issues: [{
+          id: "feature_sources.format",
+          level: "fail",
+          message: `${headingLabel(heading)} "${heading.title}" 的来源注释必须使用固定 # sources: 格式`,
+          detail: `line 1`,
+        }],
+      };
+    }
+    return { present: false, issues: [] };
   }
 
-  if (comments.length === 0) return { present: false, issues: [] };
+  return parseSourceComments(comments, heading);
+}
 
-  const first = comments[0]!.trim();
-  if (first !== "sources:") {
-    if (/source|sources|来源|PRD|prd|reference|references/.test(comments.join("\n"))) {
+function featureHeaderHeading(fileRel: string): Heading {
+  return { kind: "feature", title: fileRel, lineIndex: -1, lineNumber: 1 };
+}
+
+function parseBlockAfterHeading(content: string, heading: Heading): ParsedBlock {
+  const lines = content.split(/\r?\n/);
+  const start = heading.lineIndex + 1;
+  const end = sourcePreambleEnd(lines, heading);
+  const comments = findSourceCommentBlock(lines, start, end);
+
+  if (!comments) {
+    if (hasSourceLikeComment(lines, start, end)) {
       return {
         present: true,
         issues: [{
@@ -229,6 +224,10 @@ function parseBlockAfterHeading(content: string, heading: Heading): ParsedBlock 
     return { present: false, issues: [] };
   }
 
+  return parseSourceComments(comments, heading);
+}
+
+function parseSourceComments(comments: string[], heading: Heading): ParsedBlock {
   const yamlText = comments.join("\n");
   let parsed: unknown;
   try {
@@ -259,6 +258,64 @@ function parseBlockAfterHeading(content: string, heading: Heading): ParsedBlock 
   }
 
   return { present: true, block: result.data.sources, issues: [] };
+}
+
+function sourcePreambleEnd(lines: string[], heading: Heading): number {
+  for (let index = heading.lineIndex + 1; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (isRuleHeading(line)) return index;
+    if (heading.kind === "rule" && isScenarioHeading(line)) return index;
+    if (heading.kind === "scenario" && (isScenarioHeading(line) || isStepLine(line))) return index;
+  }
+  return lines.length;
+}
+
+function findSourceCommentBlock(lines: string[], start: number, end: number): string[] | null {
+  for (let index = start; index < end; index++) {
+    if (!isCommentLine(lines[index]!)) continue;
+
+    if (stripCommentPrefix(lines[index]!).trim() !== "sources:") continue;
+
+    const comments = [stripCommentPrefix(lines[index]!)];
+    index++;
+    while (index < end && isCommentLine(lines[index]!)) {
+      comments.push(stripCommentPrefix(lines[index]!));
+      index++;
+    }
+    index--;
+
+    return comments;
+  }
+  return null;
+}
+
+function hasSourceLikeComment(lines: string[], start: number, end: number): boolean {
+  for (let index = start; index < end; index++) {
+    if (!isCommentLine(lines[index]!)) continue;
+    if (/source|sources|来源|PRD|prd|reference|references/.test(stripCommentPrefix(lines[index]!))) return true;
+  }
+  return false;
+}
+
+function isRuleHeading(line: string): boolean {
+  return ruleHeadingRe.test(line);
+}
+
+function isScenarioHeading(line: string): boolean {
+  return scenarioHeadingRe.test(line);
+}
+
+function isStepLine(line: string): boolean {
+  const trimmed = line.trimStart();
+  return englishStepRe.test(trimmed) || chineseStepRe.test(trimmed);
+}
+
+function isCommentLine(line: string): boolean {
+  return /^\s*#/.test(line);
+}
+
+function stripCommentPrefix(line: string): string {
+  return line.replace(/^\s*# ?/, "");
 }
 
 function validateBlock(
@@ -319,21 +376,11 @@ function validateBlock(
   return issues;
 }
 
-function missingSourcesIssue(heading: Heading, fileRel: string, ruleTitle?: string): SourceIssue {
-  return {
-    id: "feature_sources.required",
-    level: "fail",
-    message: ruleTitle
-      ? `场景 "${heading.title}" 缺少 sources 注释块;其所属规则 "${ruleTitle}" 也没有 sources`
-      : `规则 "${heading.title}" 缺少 sources 注释块`,
-    detail: `${fileRel}: line ${heading.lineNumber}`,
-  };
-}
-
 function extractMarkdownTitle(content: string): string | null {
   return content.match(/^\s*#\s+(.+)$/m)?.[1]?.trim() ?? null;
 }
 
 function headingLabel(heading: Heading): string {
+  if (heading.kind === "feature") return "Feature";
   return heading.kind === "rule" ? "规则" : "场景";
 }

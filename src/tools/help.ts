@@ -14,7 +14,7 @@ export const HelpInputSchema = z.object({
   topic: z
     .string()
     .optional()
-    .describe("指南主题: overview/workflow/new-project/legacy-project/new-feature/change-feature/frontend-backend-e2e/verify-failed/tools/init/discover/contract/harness-yaml/capability-map/sources/feature/bdd/lint/agent-skills/check 或工具名"),
+    .describe("指南主题: overview/workflow/new-project/legacy-project/new-feature/change-feature/frontend-backend-e2e/verify-failed/gherkin-official/tools/init/discover/contract/harness-yaml/capability-map/sources/feature/bdd/lint/agent-skills/check 或工具名"),
   raw: z.boolean().optional().describe("true 返回 JSON,false/缺省 返回格式化文本"),
 });
 
@@ -117,6 +117,7 @@ export async function executeHelp(input: HelpInput): Promise<string> {
       "再运行 lint 和 check",
     ],
   });
+  if (topic === "gherkin-official") return renderOfficialGherkinGuide();
   if (topic === "tools") return renderTools();
   if (topic === "discover") return renderDiscoverGuide();
   if (topic === "contract" || topic === "feature") return renderContractGuide();
@@ -141,7 +142,7 @@ function renderOverview(): string {
     "最短路径:",
     "  1. 新项目: guide({ topic: \"new-project\" }) -> init -> project_context",
     "  2. 旧项目: guide({ topic: \"legacy-project\" }) -> init -> project_context -> discover",
-    "  3. 新业务: read_source/read_contract -> discover -> 人工确认 -> contract",
+    "  3. 新业务: read_source/read_contract -> discover -> 人工确认 -> guide({ topic: \"gherkin-official\" }) -> contract",
     "  4. 改完: verify -> Step Evidence Review -> lint -> check",
     "",
     "遇到 schema 错误:",
@@ -179,7 +180,7 @@ function renderWorkflow(): string {
     "  verify 负责证明本次 BDD report 覆盖目标 feature 且全部场景 passed。",
     "  lint 负责执行 harness/lint/rules.yaml 自定义禁用规则和宿主项目 lint 命令。",
     "  Step Evidence Review 负责证明每个 Then 被同等级断言验证。",
-    "  sources 负责让每条 Rule/Scenario 能追溯到 PRD、人工确认、代码推断或其他来源。",
+    "  sources 负责沉淀 PRD、人工确认、代码推断或其他来源;feature 可在文件头引用默认来源,Rule/Scenario 只在来源不同时覆盖。",
   ].join("\n");
 }
 
@@ -230,6 +231,8 @@ function renderContractGuide(): string {
   return [
     "contract: 业务契约",
     "",
+    "写 feature 前必须先看一次官方 Gherkin 例子: guide({ topic: \"gherkin-official\" })。",
+    "",
     "contract 写入 capability-map.yaml 和 .feature。capability-map.yaml 必须使用 domains.<domain>.capabilities[] 结构:",
     "",
     CAPABILITY_MAP_SCHEMA_HELP,
@@ -246,6 +249,10 @@ function renderContractGuide(): string {
     "# language: zh-CN",
     "# capability: api.order.create",
     "# entrypoint: OrderController#create",
+    "# sources:",
+    "#   current: sources/2026-05-08-code-inference-order-create.md#创建订单",
+    "#   timeline:",
+    "#     - sources/2026-05-08-code-inference-order-create.md#创建订单",
     "@order",
     "",
     "功能: 创建订单",
@@ -260,12 +267,6 @@ function renderContractGuide(): string {
     "    - 库存预占超时时间由其他能力定义。",
     "",
     "  规则: 有库存商品可以创建订单",
-    "    # sources:",
-    "    #   current: sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单",
-    "    #   timeline:",
-    "    #     - sources/2026-05-08-code-inference-order-create.md#有库存商品可以创建订单",
-    "",
-    "",
     "    场景: 客户购买有库存商品",
     "      假设 客户已登录",
     "      当 客户购买 2 件商品 \"sku-001\"",
@@ -273,6 +274,76 @@ function renderContractGuide(): string {
     "```",
     "",
     "禁止空泛 Then: 应返回成功 / 应返回完整内容 / 接口调用成功 / 状态码 200。",
+  ].join("\n");
+}
+
+function renderOfficialGherkinGuide(): string {
+  return [
+    "gherkin-official: 官方 Gherkin 例子和 harness 写法",
+    "",
+    "官方文档:",
+    "  - Gherkin Reference: https://cucumber.io/docs/gherkin/reference/",
+    "  - Gherkin Localisation: https://cucumber.io/docs/gherkin/languages/",
+    "",
+    "官方规则摘要:",
+    "  - Feature/Rule/Scenario 下都可以写自由描述文本;这些文本用于文档和报告,不作为执行步骤。",
+    "  - Rule 表示一条业务规则,用于把属于同一规则的多个 Scenario 分组。",
+    "  - Scenario 也叫 Example,是一条具体业务例子。",
+    "  - Given/When/Then/And/But 才是执行步骤;步骤文本会匹配 step definitions。",
+    "  - Then 应描述用户或外部系统可观察到的结果,不要只验证深埋在实现里的内部细节。",
+    "  - 简体中文关键字: 功能、规则、场景、假设/假如/假定、当、那么、并且/而且/同时、但是。",
+    "",
+    "官方结构形态:",
+    "```gherkin",
+    "# language: zh-CN",
+    "功能: <能力名>",
+    "  <Feature 描述>",
+    "",
+    "  规则: <一条业务规则>",
+    "    <Rule 描述>",
+    "",
+    "    场景: <一个具体例子>",
+    "      假设 <初始上下文>",
+    "      当 <发生的动作>",
+    "      那么 <可观察结果>",
+    "```",
+    "",
+    "harness 采用的增强模板:",
+    "```gherkin",
+    "# language: zh-CN",
+    "# capability: api.order.create",
+    "# entrypoint: OrderController#create",
+    "# sources:",
+    "#   current: sources/2026-05-08-code-inference-order-create.md#创建订单",
+    "#   timeline:",
+    "#     - sources/2026-05-08-code-inference-order-create.md#创建订单",
+    "@order @create",
+    "",
+    "功能: 创建订单",
+    "  意图:",
+    "    - 客户提交有效购买请求后,系统创建待支付订单并锁定库存。",
+    "",
+    "  边界:",
+    "    - 只定义订单创建,不定义支付、发货和售后。",
+    "",
+    "  待确认:",
+    "    - 无",
+    "",
+    "  规则: 有库存商品可以创建订单",
+    "    有库存商品允许创建待支付订单,并预占对应库存。",
+    "",
+    "    场景: 客户购买有库存商品",
+    "      假设 客户已登录",
+    "      而且 商品 \"sku-001\" 可售库存为 5",
+    "      当 客户购买 2 件商品 \"sku-001\"",
+    "      那么 应创建一笔待支付订单",
+    "      而且 商品 \"sku-001\" 的可售库存应减少 2",
+    "```",
+    "",
+    "写 feature 前动作:",
+    "  1. 先读本 guide topic。",
+    "  2. 再读 sources/read_contract/project_context。",
+    "  3. 再调用 contract 写入 feature。",
   ].join("\n");
 }
 
@@ -295,18 +366,21 @@ function renderSourcesGuide(): string {
     "从 OrderService#create 推断: 优惠失败时不创建订单,不锁库存。",
     "```",
     "",
-    "feature 中只允许这一种固定注释块:",
+    "feature 文件头可以统一写默认来源。Rule/Scenario 只有来源不同才写局部覆盖:",
     "",
     "```gherkin",
     ...SOURCE_BLOCK_TEMPLATE.split("\n"),
     "```",
     "",
     "规则:",
-    "  - sources 注释块放在 Rule/规则 下;如果某个场景来源不同,可以放在 Scenario/场景 下",
+    "  - # sources: 不是必填;discover.evidence 是写 feature 前的业务依据门禁",
+    "  - 文件头 sources 作为整个 feature 默认来源",
+    "  - Rule/规则 可写局部 sources 覆盖,但必须在第一个 Scenario/场景 之前",
+    "  - Scenario/场景 可写局部 sources 覆盖,但必须在第一个步骤之前",
     "  - current 必须出现在 timeline 中",
     "  - timeline 按 source 文件日期从旧到新排列",
     "  - 引用路径必须是 sources/YYYY-MM-DD-xxx.md 或 sources/YYYY-MM-DD-xxx.md#章节",
-    "  - contract 写入前硬校验;check 会全量扫描防止手写绕过",
+    "  - contract/check 只拒绝写错的 sources,不会因为缺少 sources 拒绝 feature",
   ].join("\n");
 }
 
@@ -411,7 +485,7 @@ function renderCheckGuide(): string {
     "  - feature 缺 # entrypoint",
     "  - feature 缺 Rule/规则",
     "  - Scenario/场景 写在第一个 Rule/规则 前",
-    "  - Rule/Scenario 缺少固定 # sources: 来源块",
+    "  - 已写入的 # sources: 来源块格式错误、文件不存在或 timeline 倒序",
     "  - sources 文件未按 YYYY-MM-DD-xxx.md 命名",
     "  - sources timeline 日期倒序或 current 不在 timeline 中",
     "  - Then 写得过于空泛",

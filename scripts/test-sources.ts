@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Source traceability tests: harness/sources index + Rule/Scenario source blocks.
+ * Source traceability tests: harness/sources index + optional feature-level source blocks.
  */
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -61,6 +61,11 @@ flows: []
 const featureWithSources = `# language: zh-CN
 # capability: api.order.create
 # entrypoint: OrderController#create
+# sources:
+#   current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+#   timeline:
+#     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
+#     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
 @order @create
 
 功能: 创建订单
@@ -75,12 +80,6 @@ const featureWithSources = `# language: zh-CN
     - 库存预占超时时间由其他能力定义。
 
   规则: 优惠计算失败时不创建订单
-    # sources:
-    #   current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-    #   timeline:
-    #     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
-    #     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-
     场景: 优惠服务返回失败
       假设 客户已登录
       当 客户使用不可计算的优惠下单
@@ -112,17 +111,48 @@ assert(created.ok === true, "contract should accept valid sources block");
 const featureOnDisk = await readFile(resolve(tmpRoot, "harness/features/api/order/create.feature"), "utf-8");
 assert(featureOnDisk.includes("# sources:"), "feature should be written with sources block");
 
-const missingSources = featureWithSources.replace(/    # sources:[\s\S]+?\n\n    场景:/, "    场景:");
-const missingSourcesResult = await executeContract({
+const ruleSourceOverride = featureWithSources.replace(
+  "  规则: 优惠计算失败时不创建订单\n    场景:",
+  `  规则: 优惠计算失败时不创建订单
+    优惠服务失败时,订单创建必须整体回滚。
+
+    # sources:
+    #   current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+    #   timeline:
+    #     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
+    #     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+
+    场景:`,
+);
+const ruleSourceOverrideRaw = await executeContract({
   path: tmpRoot,
   kind: "capability",
   id: "api.order.create",
   file: "features/api/order/create.feature",
-  content: missingSources,
+  content: ruleSourceOverride,
   map_content: mapContent,
+  raw: true,
 });
-console.log("=== missing sources ===\n" + missingSourcesResult + "\n");
-assert(missingSourcesResult.includes("feature_sources.required"), "contract should reject Rule without sources");
+const ruleSourceOverrideResult = JSON.parse(ruleSourceOverrideRaw);
+console.log("=== rule source override ===\n" + ruleSourceOverrideRaw + "\n");
+assert(
+  ruleSourceOverrideResult.ok === true,
+  "contract should accept optional Rule-level source overrides",
+);
+
+const withoutSources = featureWithSources.replace(/# sources:[\s\S]+?@order/, "@order");
+const withoutSourcesRaw = await executeContract({
+  path: tmpRoot,
+  kind: "capability",
+  id: "api.order.create",
+  file: "features/api/order/create.feature",
+  content: withoutSources,
+  map_content: mapContent,
+  raw: true,
+});
+const withoutSourcesResult = JSON.parse(withoutSourcesRaw);
+console.log("=== no explicit sources ===\n" + withoutSourcesRaw + "\n");
+assert(withoutSourcesResult.ok === true, "contract should accept features without explicit sources");
 
 const missingFile = featureWithSources.replace(
   "sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理",
@@ -156,9 +186,9 @@ assert(currentOutsideTimelineResult.includes("feature_sources.current_in_timelin
 
 const reversedTimeline = featureWithSources.replace(
   `#     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
-    #     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理`,
+#     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理`,
   `#     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-    #     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败`,
+#     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败`,
 );
 const reversedTimelineResult = await executeContract({
   path: tmpRoot,
@@ -229,6 +259,10 @@ assert(
     String(item.detail).includes("invalid-name.md")
   ),
   "check should fail source files without date prefix",
+);
+assert(
+  !check.static_checks.some((item: any) => item.id === "feature_sources.required"),
+  "check should not include a required sources gate",
 );
 
 const sourcesGuide = await executeHelp({ topic: "sources" });
