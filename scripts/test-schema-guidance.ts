@@ -70,11 +70,6 @@ const validFeature = `# language: zh-CN
     - 无
 
   规则: 学生可以开始练习
-    # sources:
-    #   current: sources/2026-05-08-code-inference-practice.md#学生可以开始练习
-    #   timeline:
-    #     - sources/2026-05-08-code-inference-practice.md#学生可以开始练习
-
     场景: 学生开始有效练习
       假设 学生已登录
       当 学生开始练习
@@ -119,11 +114,13 @@ const officialGherkinGuide = await executeHelp({ topic: "gherkin-official" });
 console.log("=== official gherkin guide ===\n" + officialGherkinGuide + "\n");
 assert(officialGherkinGuide.includes("https://cucumber.io/docs/gherkin/reference/"), "official guide should link Cucumber reference");
 assert(officialGherkinGuide.includes("规则: <一条业务规则>"), "official guide should show Rule-based example shape");
-assert(officialGherkinGuide.includes("# sources:"), "official guide should include harness sources template");
+assert(officialGherkinGuide.includes("source-map.yaml"), "official guide should point source traceability to source-map.yaml");
+assert(!officialGherkinGuide.includes("# sources:"), "official guide should not include inline sources comments");
 
 const configGuide = await executeHelp({ topic: "harness-yaml" });
 console.log("=== harness-yaml guide ===\n" + configGuide + "\n");
 assert(configGuide.includes("harness.yaml"), "guide harness-yaml should document config file");
+assert(configGuide.includes("spec_dir: .harness"), "guide harness-yaml should default spec_dir to .harness");
 assert(configGuide.includes("bdd:"), "guide harness-yaml should show bdd schema");
 assert(configGuide.includes("Next action"), "guide harness-yaml should include next action");
 

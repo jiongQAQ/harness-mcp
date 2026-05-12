@@ -45,7 +45,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "init",
     group: "入门",
-    description: "为新项目、旧项目或子仓库创建最小 harness 目录和配置骨架。",
+    description: "为新项目、旧项目或子仓库创建最小 .harness 目录和配置骨架。",
     useWhen: "项目第一次接入 harness-mcp,或子仓库需要 workspace.target 限制时。",
     commonArgs: ["path", "mode", "targets", "target", "overwrite", "raw"],
     example: 'init({ "mode": "workspace", "targets": ["api", "web", "e2e"], "target": "api" })',
@@ -90,7 +90,7 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "read_source",
     group: "读上下文",
-    description: "列出、读取或搜索 harness/sources 下的业务来源文档。",
+    description: "列出、读取或搜索 .harness/sources 下的业务来源文档。",
     useWhen: "AI 需要查看 PRD、人工确认、会议纪要、工单、代码推断等来源全文时。",
     commonArgs: ["path", "file", "query", "raw"],
     example: 'read_source({ "file": "sources/2026-05-08-code-inference-order-create.md" })',
@@ -108,20 +108,20 @@ export const TOOL_CATALOG: ToolCatalogEntry[] = [
   {
     name: "lint",
     group: "代码质量",
-    description: "执行 harness/lint/rules.yaml 自定义禁用规则,并可执行宿主项目 commands.lint。",
+    description: "执行 .harness/lint/rules.yaml 自定义禁用规则,并可执行宿主项目 commands.lint。",
     useWhen: "AI 写完代码后、交付前,需要按项目约定执行代码质量门禁。",
     commonArgs: ["path", "scope", "dryRun", "raw"],
     example: 'lint({ "scope": "diff", "raw": true })',
-    notes: ["不内置代码风格规则。配置 harness/lint/rules.yaml 后会执行行级正则禁用规则。", "配置 commands.lint 后会同时执行宿主项目 lint 命令。"],
+    notes: ["不内置代码风格规则。配置 .harness/lint/rules.yaml 后会执行行级正则禁用规则。", "配置 commands.lint 后会同时执行宿主项目 lint 命令。"],
   },
   {
     name: "check",
     group: "治理",
-    description: "静态检查 harness 质量并执行项目约束检查。",
+    description: "静态检查 .harness 质量并执行项目约束检查。",
     useWhen: "生成/修改契约后,或交付前检查浅 feature、目录错误和项目约束。",
     commonArgs: ["path", "dryRun", "raw"],
     example: 'check({ "raw": true })',
-    notes: ["发现缺 Rule、空泛 Then、业务 feature 放错目录、BDD 实现写进 harness 等问题。"],
+    notes: ["发现缺 Rule、空泛 Then、业务 feature 放错目录、BDD 实现写进 .harness 等问题。"],
   },
 ];
 

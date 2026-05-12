@@ -1,8 +1,8 @@
 /**
  * Source traceability for business contracts.
  *
- * Source files live under harness/sources. A feature file may declare an
- * optional file-level sources block; Rule/Scenario blocks may override it.
+ * Source documents live under spec_dir/sources. source-map.yaml optionally
+ * links capabilities and rules to the source document timeline.
  */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -27,44 +27,57 @@ export interface SourceIssue {
   detail?: string;
 }
 
-export interface FeatureSourceResult {
-  ok: boolean;
-  issues: SourceIssue[];
-}
-
 interface SourceBlock {
   current: string;
   timeline: string[];
 }
 
-interface Heading {
-  kind: "feature" | "rule" | "scenario";
-  title: string;
-  lineIndex: number;
-  lineNumber: number;
-}
+const SourceRefBlockSchema = z.object({
+  current: z.string().min(1),
+  timeline: z.array(z.string().min(1)).min(1),
+}).strict();
 
-interface ParsedBlock {
-  present: boolean;
-  block?: SourceBlock;
-  issues: SourceIssue[];
-}
+const SourceMapCapabilitySchema = SourceRefBlockSchema.extend({
+  rules: z.record(z.string(), SourceRefBlockSchema).optional().default({}),
+}).strict();
 
-const SourceBlockSchema = z.object({
-  sources: z.object({
-    current: z.string().min(1),
-    timeline: z.array(z.string().min(1)).min(1),
-  }).strict(),
+const SourceMapSchema = z.object({
+  version: z.literal(1),
+  capabilities: z.record(z.string(), SourceMapCapabilitySchema).default({}),
 }).strict();
 
 const SOURCE_FILE_RE = /^(\d{4}-\d{2}-\d{2})-[^/]+\.md$/;
 const SOURCE_REF_RE = /^sources\/(\d{4}-\d{2}-\d{2})-[^/#]+\.md(?:#.+)?$/;
 
-export const SOURCE_BLOCK_TEMPLATE = [
-  "# sources:",
-  "#   current: sources/YYYY-MM-DD-name.md#section",
-  "#   timeline:",
-  "#     - sources/YYYY-MM-DD-name.md#section",
+export const SOURCE_MAP_EXAMPLE = `version: 1
+capabilities:
+  api.order.create:
+    current: sources/2026-05-10-order-confirmed.md#创建订单
+    timeline:
+      - sources/2026-05-08-order-code-inference.md#创建订单
+      - sources/2026-05-10-order-confirmed.md#创建订单
+    rules:
+      有库存商品可以创建订单:
+        current: sources/2026-05-10-order-confirmed.md#库存规则
+        timeline:
+          - sources/2026-05-08-order-code-inference.md#库存规则
+          - sources/2026-05-10-order-confirmed.md#库存规则
+`;
+
+export const SOURCE_MAP_SCHEMA_HELP = [
+  "正确位置:",
+  "  - .harness/source-map.yaml",
+  "",
+  "正确格式:",
+  "```yaml",
+  SOURCE_MAP_EXAMPLE.trimEnd(),
+  "```",
+  "",
+  "说明:",
+  "  - source-map.yaml 可选;存在时 check 会校验格式和引用文件",
+  "  - current 表示当前生效来源,必须出现在 timeline 中",
+  "  - timeline 按来源文件日期从旧到新排列",
+  "  - 引用路径必须是 sources/YYYY-MM-DD-xxx.md 或 sources/YYYY-MM-DD-xxx.md#章节",
 ].join("\n");
 
 export async function discoverSources(
@@ -109,227 +122,60 @@ export async function checkSourceFiles(
   }];
 }
 
-export async function checkFeatureSources(
-  content: string,
-  fileRel: string,
+export async function checkSourceMap(
+  projectRoot: string,
   specDirAbs: string,
-): Promise<FeatureSourceResult> {
-  const headings = collectHeadings(content);
-  const issues: SourceIssue[] = [];
-  const featureBlock = parseFeatureHeaderBlock(content, fileRel);
-  issues.push(...featureBlock.issues);
-  if (featureBlock.block) {
-    issues.push(...validateBlock(featureBlock.block, featureHeaderHeading(fileRel), fileRel, specDirAbs));
+): Promise<SourceIssue[]> {
+  const mapPath = resolve(specDirAbs, "source-map.yaml");
+  if (!existsSync(mapPath)) return [];
+
+  const fileRel = relative(projectRoot, mapPath);
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(await readFile(mapPath, "utf-8"));
+  } catch (error) {
+    return [{
+      id: "source_map.format",
+      level: "fail",
+      message: `source-map.yaml YAML 解析失败: ${(error as Error).message}`,
+      detail: fileRel,
+    }];
   }
 
-  for (const heading of headings) {
-    const parsed = parseBlockAfterHeading(content, heading);
-    issues.push(...parsed.issues);
-    if (parsed.block) {
-      issues.push(...validateBlock(parsed.block, heading, fileRel, specDirAbs));
+  const result = SourceMapSchema.safeParse(parsed);
+  if (!result.success) {
+    return [{
+      id: "source_map.format",
+      level: "fail",
+      message: "source-map.yaml 格式错误",
+      detail: `${fileRel}: ${formatZodIssues(result.error.issues)}`,
+    }];
+  }
+
+  const issues: SourceIssue[] = [];
+  for (const [capabilityId, block] of Object.entries(result.data.capabilities)) {
+    issues.push(...validateBlock(block, capabilityId, specDirAbs));
+    for (const [ruleName, ruleBlock] of Object.entries(block.rules)) {
+      issues.push(...validateBlock(ruleBlock, `${capabilityId}.rules.${ruleName}`, specDirAbs));
     }
   }
-
-  return { ok: issues.length === 0, issues };
-}
-
-export function formatFeatureSourceFailure(
-  result: FeatureSourceResult,
-  fileRel: string,
-): string {
-  return [
-    `Feature sources 检查失败: ${fileRel}`,
-    ...result.issues.map((issue) => `  - [${issue.id}] ${issue.message}${issue.detail ? ` (${issue.detail})` : ""}`),
-    "",
-    "标准格式:",
-    SOURCE_BLOCK_TEMPLATE,
-  ].join("\n");
+  return issues;
 }
 
 export function extractSourceFileFromRef(ref: string): string {
   return ref.split("#")[0] ?? ref;
 }
 
-function collectHeadings(content: string): Heading[] {
-  const result: Heading[] = [];
-  const lines = content.split(/\r?\n/);
-  lines.forEach((line, index) => {
-    const rule = line.match(ruleHeadingRe);
-    if (rule?.[1]) {
-      result.push({ kind: "rule", title: rule[1].trim(), lineIndex: index, lineNumber: index + 1 });
-      return;
-    }
-
-    const scenario = line.match(scenarioHeadingRe);
-    if (scenario?.[1]) {
-      result.push({ kind: "scenario", title: scenario[1].trim(), lineIndex: index, lineNumber: index + 1 });
-    }
-  });
-  return result;
-}
-
-const ruleHeadingRe = /^\s*(?:Rule|规则|規則):\s*(.+)$/;
-const scenarioHeadingRe = /^\s*(?:Scenario|场景|場景|Escenario):\s*(.+)$/;
-const featureHeadingRe = /^\s*(?:Feature|功能|機能|Característica):\s*(.+)$/;
-const englishStepRe = /^(?:Given|When|Then|And|But)\b/;
-const chineseStepRe = /^(?:假设|假如|当|那么|则|并且|而且|但是)/;
-
-function parseFeatureHeaderBlock(content: string, fileRel: string): ParsedBlock {
-  const lines = content.split(/\r?\n/);
-  const featureLine = lines.findIndex((line) => featureHeadingRe.test(line));
-  const end = featureLine === -1 ? lines.length : featureLine;
-  const comments = findSourceCommentBlock(lines, 0, end);
-  const heading = featureHeaderHeading(fileRel);
-
-  if (!comments) {
-    if (hasSourceLikeComment(lines, 0, end)) {
-      return {
-        present: true,
-        issues: [{
-          id: "feature_sources.format",
-          level: "fail",
-          message: `${headingLabel(heading)} "${heading.title}" 的来源注释必须使用固定 # sources: 格式`,
-          detail: `line 1`,
-        }],
-      };
-    }
-    return { present: false, issues: [] };
-  }
-
-  return parseSourceComments(comments, heading);
-}
-
-function featureHeaderHeading(fileRel: string): Heading {
-  return { kind: "feature", title: fileRel, lineIndex: -1, lineNumber: 1 };
-}
-
-function parseBlockAfterHeading(content: string, heading: Heading): ParsedBlock {
-  const lines = content.split(/\r?\n/);
-  const start = heading.lineIndex + 1;
-  const end = sourcePreambleEnd(lines, heading);
-  const comments = findSourceCommentBlock(lines, start, end);
-
-  if (!comments) {
-    if (hasSourceLikeComment(lines, start, end)) {
-      return {
-        present: true,
-        issues: [{
-          id: "feature_sources.format",
-          level: "fail",
-          message: `${headingLabel(heading)} "${heading.title}" 的来源注释必须使用固定 # sources: 格式`,
-          detail: `line ${heading.lineNumber}`,
-        }],
-      };
-    }
-    return { present: false, issues: [] };
-  }
-
-  return parseSourceComments(comments, heading);
-}
-
-function parseSourceComments(comments: string[], heading: Heading): ParsedBlock {
-  const yamlText = comments.join("\n");
-  let parsed: unknown;
-  try {
-    parsed = parseYaml(yamlText);
-  } catch (e) {
-    return {
-      present: true,
-      issues: [{
-        id: "feature_sources.format",
-        level: "fail",
-        message: `sources YAML 解析失败: ${(e as Error).message}`,
-        detail: `line ${heading.lineNumber}`,
-      }],
-    };
-  }
-
-  const result = SourceBlockSchema.safeParse(parsed);
-  if (!result.success) {
-    return {
-      present: true,
-      issues: [{
-        id: "feature_sources.format",
-        level: "fail",
-        message: "sources 注释块只能包含 current 和 timeline 字段",
-        detail: `line ${heading.lineNumber}: ${result.error.issues.map((issue) => issue.path.join(".") || "(root)").join(", ")}`,
-      }],
-    };
-  }
-
-  return { present: true, block: result.data.sources, issues: [] };
-}
-
-function sourcePreambleEnd(lines: string[], heading: Heading): number {
-  for (let index = heading.lineIndex + 1; index < lines.length; index++) {
-    const line = lines[index]!;
-    if (isRuleHeading(line)) return index;
-    if (heading.kind === "rule" && isScenarioHeading(line)) return index;
-    if (heading.kind === "scenario" && (isScenarioHeading(line) || isStepLine(line))) return index;
-  }
-  return lines.length;
-}
-
-function findSourceCommentBlock(lines: string[], start: number, end: number): string[] | null {
-  for (let index = start; index < end; index++) {
-    if (!isCommentLine(lines[index]!)) continue;
-
-    if (stripCommentPrefix(lines[index]!).trim() !== "sources:") continue;
-
-    const comments = [stripCommentPrefix(lines[index]!)];
-    index++;
-    while (index < end && isCommentLine(lines[index]!)) {
-      comments.push(stripCommentPrefix(lines[index]!));
-      index++;
-    }
-    index--;
-
-    return comments;
-  }
-  return null;
-}
-
-function hasSourceLikeComment(lines: string[], start: number, end: number): boolean {
-  for (let index = start; index < end; index++) {
-    if (!isCommentLine(lines[index]!)) continue;
-    if (/source|sources|来源|PRD|prd|reference|references/.test(stripCommentPrefix(lines[index]!))) return true;
-  }
-  return false;
-}
-
-function isRuleHeading(line: string): boolean {
-  return ruleHeadingRe.test(line);
-}
-
-function isScenarioHeading(line: string): boolean {
-  return scenarioHeadingRe.test(line);
-}
-
-function isStepLine(line: string): boolean {
-  const trimmed = line.trimStart();
-  return englishStepRe.test(trimmed) || chineseStepRe.test(trimmed);
-}
-
-function isCommentLine(line: string): boolean {
-  return /^\s*#/.test(line);
-}
-
-function stripCommentPrefix(line: string): string {
-  return line.replace(/^\s*# ?/, "");
-}
-
 function validateBlock(
   block: SourceBlock,
-  heading: Heading,
-  fileRel: string,
+  location: string,
   specDirAbs: string,
 ): SourceIssue[] {
   const issues: SourceIssue[] = [];
-  const location = `${fileRel}: line ${heading.lineNumber}`;
 
   if (!block.timeline.includes(block.current)) {
     issues.push({
-      id: "feature_sources.current_in_timeline",
+      id: "source_map.current_in_timeline",
       level: "fail",
       message: `current 必须出现在 timeline 中: ${block.current}`,
       detail: location,
@@ -341,7 +187,7 @@ function validateBlock(
     const match = ref.match(SOURCE_REF_RE);
     if (!match) {
       issues.push({
-        id: "feature_sources.format",
+        id: "source_map.format",
         level: "fail",
         message: `source 引用必须使用 sources/YYYY-MM-DD-xxx.md#章节: ${ref}`,
         detail: location,
@@ -352,7 +198,7 @@ function validateBlock(
     const filePart = extractSourceFileFromRef(ref);
     if (!existsSync(resolve(specDirAbs, filePart))) {
       issues.push({
-        id: "feature_sources.exists",
+        id: "source_map.exists",
         level: "fail",
         message: `source 文件不存在: ${filePart}`,
         detail: location,
@@ -364,7 +210,7 @@ function validateBlock(
   for (let index = 1; index < dates.length; index++) {
     if (dates[index - 1]! > dates[index]!) {
       issues.push({
-        id: "feature_sources.timeline_order",
+        id: "source_map.timeline_order",
         level: "fail",
         message: "timeline 必须按 source 文件日期从旧到新排列",
         detail: `${location}: ${block.timeline.join(" -> ")}`,
@@ -380,7 +226,8 @@ function extractMarkdownTitle(content: string): string | null {
   return content.match(/^\s*#\s+(.+)$/m)?.[1]?.trim() ?? null;
 }
 
-function headingLabel(heading: Heading): string {
-  if (heading.kind === "feature") return "Feature";
-  return heading.kind === "rule" ? "规则" : "场景";
+function formatZodIssues(issues: z.ZodIssue[]): string {
+  return issues
+    .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+    .join("; ");
 }

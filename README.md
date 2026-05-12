@@ -34,14 +34,14 @@ read_source/read_contract -> discover -> contract -> verify -> lint -> check
 新项目从 0 接入：
 
 1. 使用 `guide` 查看新项目接入流程。
-2. 使用 `init` 创建最小 `harness.yaml` 和 `harness/` 骨架。
+2. 使用 `init` 创建最小 `harness.yaml` 和 `.harness/` 骨架。
 3. 使用 `project_context` 确认目录、章程、来源、能力地图和 AI 指引。
 4. 先沉淀第一份业务来源，再进入 `discover`。
 
 旧项目补业务契约：
 
 1. 使用 `guide` 查看旧项目补契约流程。
-2. 使用 `init` 创建兼容旧项目的 harness 骨架。
+2. 使用 `init` 创建兼容旧项目的 `.harness` 骨架。
 3. 从真实入口方法、调用链、SQL、现有测试中推导业务来源。
 4. 使用 `discover` 输出业务规则、状态变化、副作用、例子、证据和待确认问题。
 5. 人工确认后，再用 `contract` 写入能力地图和 feature。
@@ -59,13 +59,13 @@ read_source/read_contract -> discover -> contract -> verify -> lint -> check
 | 工具 | 作用 |
 |---|---|
 | `guide` | 按任务场景告诉 AI 下一步怎么做；不读取项目 |
-| `init` | 创建最小 harness 骨架；不生成业务 feature |
+| `init` | 创建最小 `.harness` 骨架；不生成业务 feature |
 | `project_context` | 读取章程、来源索引、能力地图、已有契约和 AI 指引 |
 | `discover` | 检查 AI 是否讲清业务入口、调用链、状态变化、副作用、例子和证据 |
 | `contract` | 写入 `capability-map.yaml` 和 `.feature` 契约 |
 | `verify` | 运行 BDD，并确认 report 覆盖目标 feature/scenario |
 | `lint` | 执行项目自定义代码质量规则和宿主项目 lint 命令 |
-| `check` | 只检查 harness 契约治理，不替代代码 lint |
+| `check` | 只检查 `.harness` 契约治理，不替代代码 lint |
 
 ## 引导主题
 
@@ -89,12 +89,13 @@ read_source/read_contract -> discover -> contract -> verify -> lint -> check
 ```text
 your-project/
 ├── harness.yaml
-└── harness/
+└── .harness/
     ├── _charter/
     │   ├── architecture.md
     │   ├── conventions.md
     │   └── project-constraints.md
     ├── capability-map.yaml
+    ├── source-map.yaml
     ├── sources/
     │   ├── 2026-05-08-code-inference-order-create.md
     │   └── 2026-05-10-manual-confirmation-order-create.md
@@ -115,7 +116,7 @@ your-project/
         └── <rule>.feature
 ```
 
-`harness/` 只放业务契约、全局章程和治理规则，不放 BDD runner、step definitions、测试辅助代码或测试报告。
+`.harness/` 只放业务契约、全局章程和治理规则，不放 BDD runner、step definitions、测试辅助代码或测试报告。
 
 `_charter` 是保留目录，用 Markdown 放全局项目约定，例如架构、命名规范、模块边界和编码约束。下划线的目的只是把它和普通业务域区分开，并让 AI 在文件树里优先看到。
 
@@ -125,8 +126,8 @@ your-project/
 
 ```yaml
 version: 1
-spec_dir: harness
-charter_dir: harness/_charter
+spec_dir: .harness
+charter_dir: .harness/_charter
 language: zh-CN
 targets:
   - api
@@ -253,10 +254,10 @@ flows:
 
 进入 feature 的业务承诺必须能追溯到来源。来源不等于 PRD；它可以是正式 PRD、人工确认、会议纪要、工单、代码推断或现有测试推断。
 
-来源文档统一放在 `harness/sources/`，文件名按日期命名：
+来源文档统一放在 `.harness/sources/`，文件名按日期命名：
 
 ```text
-harness/sources/
+.harness/sources/
 ├── 2026-05-08-code-inference-order-create.md
 ├── 2026-05-10-manual-confirmation-order-create.md
 └── 2026-05-20-campaign-adjustment.md
@@ -275,39 +276,32 @@ source 文件不需要 frontmatter，可以是普通 Markdown：
 - 该行为是产品规则，还是历史实现偶然结果。
 ```
 
-feature 可以在文件头统一声明默认来源。多数情况下只写这一处即可，避免每个规则重复同一份来源：
+来源关系写在 `.harness/source-map.yaml`。它是可选治理文件，用来记录 capability 或某条规则的当前来源和时间线：
 
-```gherkin
-# language: zh-CN
-# capability: api.order.create
-# entrypoint: OrderController#create
-# sources:
-#   current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-#   timeline:
-#     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
-#     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-@order @create
-
-功能: 创建订单
-
-  规则: 优惠计算失败时不创建订单
-    优惠服务失败时，订单创建必须整体回滚。
-
-    场景: 优惠服务返回失败
-      假设 客户已登录
-      当 客户使用不可计算的优惠下单
-      那么 不应创建订单
+```yaml
+version: 1
+capabilities:
+  api.order.create:
+    current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+    timeline:
+      - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
+      - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+    rules:
+      优惠计算失败时不创建订单:
+        current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+        timeline:
+          - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
+          - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
 ```
 
 规则：
 
-- 只认 `# sources:`，不认 `# source:`、`# 需求来源:` 或其他变体。
+- 不在 `.feature` 内写来源注释，避免重复和格式漂移。
+- `source-map.yaml` 不强制存在；存在时 `check` 会校验它。
 - `current` 必须出现在 `timeline` 中。
 - `timeline` 按 source 文件日期从旧到新排列。
-- `# sources:` 不是必填；`discover.evidence` 才是写 feature 前的业务依据门禁。
-- 如果某条规则或场景来源不同，可以在 `规则/Rule` 或 `场景/Scenario` 下写局部 `# sources:` 覆盖。
-- 局部 `# sources:` 写了就必须格式正确；规则级来源必须在第一个场景之前，场景级来源必须在第一个步骤之前。
-- `contract` 和 `check` 只会拒绝格式错误、文件不存在、timeline 乱序等问题，不会因为缺少 `# sources:` 拒绝 feature。
+- 引用路径必须是 `sources/YYYY-MM-DD-xxx.md` 或 `sources/YYYY-MM-DD-xxx.md#章节`。
+- `contract` 不因为缺少 `source-map.yaml` 拒绝 feature；`check` 只拒绝写错的 `source-map.yaml`。
 
 旧项目接入时，可以先把代码推断沉淀为 source，再逐步补人工确认 source。
 
@@ -330,10 +324,6 @@ guide({ "topic": "gherkin-official" })
 # language: zh-CN
 # capability: api.order.create
 # entrypoint: OrderController#create
-# sources:
-#   current: sources/2026-05-08-code-inference-order-create.md#创建订单
-#   timeline:
-#     - sources/2026-05-08-code-inference-order-create.md#创建订单
 @order @create
 
 功能: 创建订单
@@ -367,7 +357,7 @@ guide({ "topic": "gherkin-official" })
 Feature 自审触发时机：
 
 - `contract` 写入成功后。
-- 人工或 AI 修改 `harness/features/**/*.feature` 或 `harness/flows/**/*.feature` 后。
+- 人工或 AI 修改 `.harness/features/**/*.feature` 或 `.harness/flows/**/*.feature` 后。
 
 Feature Contract Review 只审业务契约：
 
@@ -375,7 +365,7 @@ Feature Contract Review 只审业务契约：
 |---|---|
 | 能力边界 | 是否只表达一个业务目的 |
 | 入口证据 | 是否有 `# entrypoint` 或 planned 入口 |
-| 来源追溯 | 是否已有 discover evidence；如写 `# sources:`，格式是否正确 |
+| 来源追溯 | 是否已有 discover evidence；如维护 `source-map.yaml`，格式是否正确 |
 | 规则分组 | 是否用 `规则/Rule` 表达业务分支 |
 | 结构顺序 | Scenario/场景 是否都写在 Rule/规则 下 |
 | 场景覆盖 | 正常、边界、异常、权限是否按需覆盖 |
@@ -384,13 +374,13 @@ Feature Contract Review 只审业务契约：
 
 ## BDD Step Definitions
 
-Step definitions 写在宿主项目自己的测试目录里，不写在 `harness/` 里。
+Step definitions 写在宿主项目自己的测试目录里，不写在 `.harness/` 里。
 
 推荐使用语言无关的职责目录：
 
 ```text
 your-project/
-├── harness/
+├── .harness/
 │   └── features/api/order/create.feature
 └── tests-or-src-test/
     └── contract/
@@ -476,11 +466,11 @@ verify({ "target_type": "flow", "target": "e2e.order.customerPurchase" })
 `lint` 是独立的代码质量门禁，用来拦 AI 写出来的低质量代码。它和 `check` 分工不同：
 
 - `lint` 管宿主项目代码质量。
-- `check` 管 harness 契约质量、map 对齐和 constraints。
+- `check` 管 `.harness` 契约质量、map 对齐和 constraints。
 
-`lint` 不内置代码风格规则。默认只执行项目显式配置的 `harness/lint/rules.yaml` 和 `commands.lint`。
+`lint` 不内置代码风格规则。默认只执行项目显式配置的 `.harness/lint/rules.yaml` 和 `commands.lint`。
 
-项目可以在 `harness/lint/rules.yaml` 里追加自定义禁用规则。默认不生成任何自定义规则；只有项目明确约定后才添加。`pattern` 是行级 JavaScript 正则，命中即失败：
+项目可以在 `.harness/lint/rules.yaml` 里追加自定义禁用规则。默认不生成任何自定义规则；只有项目明确约定后才添加。`pattern` 是行级 JavaScript 正则，命中即失败：
 
 ```yaml
 version: 1
@@ -491,7 +481,7 @@ rules:
     fix: "<建议修正方式>"
 ```
 
-`harness/lint/rules.yaml` 适合拦“不要出现这类代码”的简单规则。需要跨行语义分析时，用项目自己的 lint/checkstyle/PMD/ArchUnit/ESLint 规则，并接入 `commands.lint`：
+`.harness/lint/rules.yaml` 适合拦“不要出现这类代码”的简单规则。需要跨行语义分析时，用项目自己的 lint/checkstyle/PMD/ArchUnit/ESLint 规则，并接入 `commands.lint`：
 
 ```yaml
 commands:
@@ -513,10 +503,10 @@ commands:
 
 ## 项目公共 Agent Skills
 
-`harness/agent-skills/` 是项目内公共 Agent Skill 的保存位置：
+`.harness/agent-skills/` 是项目内公共 Agent Skill 的保存位置：
 
 ```text
-harness/
+.harness/
 └── agent-skills/
     └── <skill-name>/
         └── SKILL.md
@@ -524,24 +514,24 @@ harness/
 
 MCP 只做索引，不负责加载、安装或校验 skill 内容。
 
-- `project_context` 会列出 `harness/agent-skills/*/SKILL.md`。
+- `project_context` 会列出 `.harness/agent-skills/*/SKILL.md`。
 - 如果 `SKILL.md` frontmatter 里有 `description`，索引会显示它。
 - MCP 不会自动把 skill 加入 `.claude/skills`、`.codex/skills` 或其他客户端目录。
 - 是否使用、怎么同步到客户端目录，由用户和团队自己决定。
 
-`check` 用来做 harness 契约治理检查。它不做宿主项目代码风格判断；代码质量交给 `lint` 和 `commands.lint`。
+`check` 用来做 `.harness` 契约治理检查。它不做宿主项目代码风格判断；代码质量交给 `lint` 和 `commands.lint`。
 
 - feature 是否缺少 `# entrypoint`。
 - feature 是否缺少 `规则/Rule`。
 - Scenario/场景 是否写在第一个 Rule/规则 前。
 - Then 是否过于泛化。
-- 已写入的 `# sources:` 是否格式正确、文件存在、`timeline` 顺序正确。
+- `source-map.yaml` 是否格式正确、文件存在、`timeline` 顺序正确。
 - `sources/` 文件是否按 `YYYY-MM-DD-xxx.md` 命名。
 - `timeline` 是否按日期升序，`current` 是否在 `timeline` 中。
-- 业务 feature 是否放在 `harness/features/<target>/<domain>/` 下。
-- flow 是否放在 `harness/flows/<target>/<domain>/` 下。
+- 业务 feature 是否放在 `.harness/features/<target>/<domain>/` 下。
+- flow 是否放在 `.harness/flows/<target>/<domain>/` 下。
 - `capability-map.yaml` 与 feature/flow 是否对齐。
-- `harness/` 下是否混入 BDD 实现代码。
+- `.harness/` 下是否混入 BDD 实现代码。
 - 项目配置的 constraints 是否通过。
 
 ## 本地接入

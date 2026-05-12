@@ -50,7 +50,7 @@ const WorkspaceSchema = z.object({
 
 export const ConfigSchema = z.object({
   version: z.literal(1),
-  spec_dir: z.string().default("harness"),
+  spec_dir: z.string().default(".harness"),
   charter_dir: z.string().optional(),
   language: LanguageSchema.optional().default("zh-CN"),
   targets: z.array(TargetNameSchema).min(1, "targets 至少声明一个验证目标"),
@@ -82,8 +82,8 @@ export const ConfigSchema = z.object({
 export type HarnessConfig = z.infer<typeof ConfigSchema>;
 
 export const HARNESS_CONFIG_EXAMPLE = `version: 1
-spec_dir: harness
-charter_dir: harness/_charter
+spec_dir: .harness
+charter_dir: .harness/_charter
 language: zh-CN
 targets:
   - api

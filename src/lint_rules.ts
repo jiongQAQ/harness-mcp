@@ -32,7 +32,7 @@ rules:
 
 export const LINT_RULES_SCHEMA_HELP = [
   "正确位置:",
-  "  - harness/lint/rules.yaml",
+  "  - .harness/lint/rules.yaml",
   "",
   "正确格式:",
   "```yaml",
@@ -45,7 +45,7 @@ export const LINT_RULES_SCHEMA_HELP = [
   "  - 跨行或语义级规则应放到宿主项目 lint/checkstyle/PMD/ESLint,再通过 commands.lint 接入",
   "",
   "Next action:",
-  "  1. 修正 harness/lint/rules.yaml",
+  "  1. 修正 .harness/lint/rules.yaml",
   "  2. 重新调用 lint() 验证",
 ].join("\n");
 
@@ -110,7 +110,7 @@ export function parseLintRulesContent(
 
 export function formatLintRulesError(error: string): string {
   return [
-    "harness/lint/rules.yaml 格式错误:",
+    ".harness/lint/rules.yaml 格式错误:",
     `  - ${error}`,
     "",
     LINT_RULES_SCHEMA_HELP,

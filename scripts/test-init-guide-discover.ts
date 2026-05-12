@@ -3,7 +3,7 @@
  * Init and operational guide tests.
  */
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { executeDiscover } from "../src/tools/discover.ts";
@@ -55,16 +55,47 @@ const harnessYaml = await readFile(resolve(tmpRoot, "harness.yaml"), "utf-8");
 assert(harnessYaml.includes("targets:"), "init should write targets");
 assert(harnessYaml.includes("workspace:"), "workspace mode should write workspace target");
 assert(harnessYaml.includes("target: api"), "workspace target should be api");
-assert(existsSync(resolve(tmpRoot, "harness/_charter/architecture.md")), "init should create architecture charter");
-assert(existsSync(resolve(tmpRoot, "harness/capability-map.yaml")), "init should create capability map");
-assert(existsSync(resolve(tmpRoot, "harness/lint/rules.yaml")), "init should create empty lint rules file");
+assert(harnessYaml.includes("spec_dir: .harness"), "init should default spec_dir to .harness");
+assert(harnessYaml.includes("charter_dir: .harness/_charter"), "init should default charter_dir to .harness/_charter");
+assert(existsSync(resolve(tmpRoot, ".harness/_charter/architecture.md")), "init should create architecture charter");
+assert(existsSync(resolve(tmpRoot, ".harness/capability-map.yaml")), "init should create capability map");
+assert(existsSync(resolve(tmpRoot, ".harness/source-map.yaml")), "init should create source map");
+assert(existsSync(resolve(tmpRoot, ".harness/lint/rules.yaml")), "init should create empty lint rules file");
 
-const map = await readFile(resolve(tmpRoot, "harness/capability-map.yaml"), "utf-8");
+const map = await readFile(resolve(tmpRoot, ".harness/capability-map.yaml"), "utf-8");
 assert(map.includes("domains: {}"), "empty capability map should be explicit");
 
-const lintRules = await readFile(resolve(tmpRoot, "harness/lint/rules.yaml"), "utf-8");
+const sourceMap = await readFile(resolve(tmpRoot, ".harness/source-map.yaml"), "utf-8");
+assert(sourceMap.includes("capabilities: {}"), "empty source map should be explicit");
+
+const lintRules = await readFile(resolve(tmpRoot, ".harness/lint/rules.yaml"), "utf-8");
 assert(lintRules.includes("rules: []"), "init should not create opinionated code lint rules");
 assert(!lintRules.includes("try"), "init should not seed no-try-catch or other project-specific rules");
+
+const existingRoot = await mkdtemp(`${tmpdir()}/harness-mcp-init-existing-`);
+await writeFile(
+  resolve(existingRoot, "harness.yaml"),
+  `version: 1
+spec_dir: harness
+charter_dir: harness/_charter
+targets:
+  - api
+`,
+);
+const existingInitRaw = await executeInit({
+  path: existingRoot,
+  mode: "legacy",
+  raw: true,
+});
+console.log("=== init existing config ===\n" + existingInitRaw + "\n");
+const existingInit = JSON.parse(existingInitRaw);
+assert(existingInit.ok === true, "init should succeed with existing harness.yaml");
+assert(
+  existingInit.files.some((file: any) => file.file === "harness.yaml" && file.action === "skipped"),
+  "init should skip existing harness.yaml without overwrite",
+);
+assert(existsSync(resolve(existingRoot, "harness/source-map.yaml")), "init should add new files under existing spec_dir");
+assert(!existsSync(resolve(existingRoot, ".harness/source-map.yaml")), "init should not create ignored .harness files for existing spec_dir");
 
 const shallowStateRaw = await executeDiscover({
   source: "code",
@@ -139,6 +170,7 @@ assert(
 );
 
 await rm(tmpRoot, { recursive: true, force: true });
+await rm(existingRoot, { recursive: true, force: true });
 
 if (pass) console.log("\nAll init/guide/discover tests passed");
 else process.exit(1);

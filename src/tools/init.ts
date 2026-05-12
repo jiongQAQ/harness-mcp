@@ -5,8 +5,10 @@ import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { loadConfig } from "../config.ts";
 import { resolveProjectRoot } from "../project.ts";
 
+const DEFAULT_SPEC_DIR = ".harness";
 const TargetNameSchema = z.string().regex(/^[a-z0-9_-]+$/, "target 只能包含小写字母、数字、短横线或下划线");
 
 export const InitInputSchema = z.object({
@@ -33,49 +35,61 @@ export async function executeInit(input: InitInput): Promise<string> {
 
   const value = parsed.data;
   const root = resolveProjectRoot(value.path);
-  const targets = resolveTargets(value.mode, value.targets, value.target);
+  const existing = value.overwrite ? null : await loadExistingConfig(root);
+  if (typeof existing === "string") return existing;
+
+  const targets = existing
+    ? { ok: true as const, targets: existing.config.targets }
+    : resolveTargets(value.mode, value.targets, value.target);
   if (!targets.ok) return targets.error;
 
-  if (value.mode === "workspace" && !value.target) {
+  const workspaceTarget = existing
+    ? existing.config.workspace?.target
+    : value.target;
+  const specDir = existing?.config.spec_dir ?? DEFAULT_SPEC_DIR;
+  const charterDir = existing?.config.charter_dir ?? `${specDir}/_charter`;
+
+  if (!existing && value.mode === "workspace" && !value.target) {
     return "init 参数不合法:\n  - workspace 模式必须传 target";
   }
-  if (value.target && !targets.targets.includes(value.target)) {
+  if (!existing && value.target && !targets.targets.includes(value.target)) {
     return `init 参数不合法:\n  - target ${value.target} 必须包含在 targets 中`;
   }
 
   const files: InitFileResult[] = [];
-  await mkdir(resolve(root, "harness/_charter"), { recursive: true });
-  await mkdir(resolve(root, "harness/sources"), { recursive: true });
-  await mkdir(resolve(root, "harness/features"), { recursive: true });
-  await mkdir(resolve(root, "harness/flows"), { recursive: true });
-  await mkdir(resolve(root, "harness/lint"), { recursive: true });
-  await mkdir(resolve(root, "harness/agent-skills"), { recursive: true });
-  await mkdir(resolve(root, "harness/constraints"), { recursive: true });
+  await mkdir(resolve(root, charterDir), { recursive: true });
+  await mkdir(resolve(root, `${specDir}/sources`), { recursive: true });
+  await mkdir(resolve(root, `${specDir}/features`), { recursive: true });
+  await mkdir(resolve(root, `${specDir}/flows`), { recursive: true });
+  await mkdir(resolve(root, `${specDir}/lint`), { recursive: true });
+  await mkdir(resolve(root, `${specDir}/agent-skills`), { recursive: true });
+  await mkdir(resolve(root, `${specDir}/constraints`), { recursive: true });
   for (const target of targets.targets) {
-    await mkdir(resolve(root, "harness/features", target), { recursive: true });
-    await mkdir(resolve(root, "harness/flows", target), { recursive: true });
+    await mkdir(resolve(root, `${specDir}/features`, target), { recursive: true });
+    await mkdir(resolve(root, `${specDir}/flows`, target), { recursive: true });
   }
 
-  await writeInitFile(root, "harness.yaml", renderHarnessYaml(targets.targets, value.target), value.overwrite, files);
-  await writeInitFile(root, "harness/capability-map.yaml", "version: 1\ndomains: {}\nflows: []\n", value.overwrite, files);
-  await writeInitFile(root, "harness/lint/rules.yaml", "version: 1\nrules: []\n", value.overwrite, files);
+  await writeInitFile(root, "harness.yaml", renderHarnessYaml(targets.targets, workspaceTarget), value.overwrite, files);
+  await writeInitFile(root, `${specDir}/capability-map.yaml`, "version: 1\ndomains: {}\nflows: []\n", value.overwrite, files);
+  await writeInitFile(root, `${specDir}/source-map.yaml`, "version: 1\ncapabilities: {}\n", value.overwrite, files);
+  await writeInitFile(root, `${specDir}/lint/rules.yaml`, "version: 1\nrules: []\n", value.overwrite, files);
   await writeInitFile(
     root,
-    "harness/_charter/architecture.md",
+    `${charterDir}/architecture.md`,
     "# Architecture\n\n记录系统结构、模块边界、关键依赖和运行时形态。\n",
     value.overwrite,
     files,
   );
   await writeInitFile(
     root,
-    "harness/_charter/conventions.md",
+    `${charterDir}/conventions.md`,
     "# Conventions\n\n记录命名、分层、错误处理、测试和代码风格约定。\n",
     value.overwrite,
     files,
   );
   await writeInitFile(
     root,
-    "harness/_charter/project-constraints.md",
+    `${charterDir}/project-constraints.md`,
     "# Project Constraints\n\n记录必须遵守的技术约束、模块依赖方向和禁止事项。\n",
     value.overwrite,
     files,
@@ -86,7 +100,7 @@ export async function executeInit(input: InitInput): Promise<string> {
     project_root: root,
     mode: value.mode,
     targets: targets.targets,
-    workspace_target: value.target ?? null,
+    workspace_target: workspaceTarget ?? null,
     files,
     next_required_action: "project_context",
     next_steps: nextSteps(value.mode),
@@ -94,6 +108,14 @@ export async function executeInit(input: InitInput): Promise<string> {
 
   if (value.raw) return JSON.stringify(payload, null, 2);
   return renderInitResult(payload);
+}
+
+async function loadExistingConfig(root: string): Promise<Awaited<ReturnType<typeof loadConfig>> | string> {
+  try {
+    return await loadConfig(root);
+  } catch (error) {
+    return (error as Error).message;
+  }
 }
 
 function resolveTargets(
@@ -129,8 +151,8 @@ function renderHarnessYaml(targets: string[], workspaceTarget?: string): string 
   const targetLines = targets.map((target) => `  - ${target}`).join("\n");
   const workspaceBlock = workspaceTarget ? `\nworkspace:\n  target: ${workspaceTarget}\n` : "";
   return `version: 1
-spec_dir: harness
-charter_dir: harness/_charter
+spec_dir: .harness
+charter_dir: .harness/_charter
 language: zh-CN
 targets:
 ${targetLines}
@@ -171,7 +193,7 @@ function nextSteps(mode: "new" | "legacy" | "workspace"): string[] {
   }
   return [
     "调用 project_context() 确认初始化结果",
-    "先把 PRD、人工确认或代码推断沉淀到 harness/sources/",
+    "先把 PRD、人工确认或代码推断沉淀到 .harness/sources/",
     "调用 discover() 完成业务发现,人工确认后再 contract()",
   ];
 }

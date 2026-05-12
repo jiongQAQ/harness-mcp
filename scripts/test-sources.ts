@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Source traceability tests: harness/sources index + optional feature-level source blocks.
+ * Source traceability tests: .harness/sources documents + optional source-map.yaml.
  */
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,19 +12,19 @@ import { executeHelp } from "../src/tools/help.ts";
 import { executeReadSource } from "../src/tools/read_source.ts";
 
 const tmpRoot = await mkdtemp(`${tmpdir()}/harness-mcp-sources-`);
-await mkdir(resolve(tmpRoot, "harness/sources"), { recursive: true });
-await mkdir(resolve(tmpRoot, "harness/features/api/order"), { recursive: true });
+await mkdir(resolve(tmpRoot, ".harness/sources"), { recursive: true });
+await mkdir(resolve(tmpRoot, ".harness/features/api/order"), { recursive: true });
 await writeFile(
   resolve(tmpRoot, "harness.yaml"),
   `version: 1
-spec_dir: harness
-charter_dir: harness/_charter
+spec_dir: .harness
+charter_dir: .harness/_charter
 targets:
   - api
 `,
 );
 await writeFile(
-  resolve(tmpRoot, "harness/sources/2026-05-08-code-inference-order-create.md"),
+  resolve(tmpRoot, ".harness/sources/2026-05-08-code-inference-order-create.md"),
   `# 创建订单规则代码推断
 
 ## 优惠计算失败
@@ -33,7 +33,7 @@ await writeFile(
 `,
 );
 await writeFile(
-  resolve(tmpRoot, "harness/sources/2026-05-10-manual-confirmation-order-create.md"),
+  resolve(tmpRoot, ".harness/sources/2026-05-10-manual-confirmation-order-create.md"),
   `# 创建订单人工确认
 
 ## 优惠失败处理
@@ -42,7 +42,7 @@ await writeFile(
 `,
 );
 await writeFile(
-  resolve(tmpRoot, "harness/sources/invalid-name.md"),
+  resolve(tmpRoot, ".harness/sources/invalid-name.md"),
   `# 错误命名来源
 `,
 );
@@ -58,14 +58,24 @@ domains:
 flows: []
 `;
 
-const featureWithSources = `# language: zh-CN
+const validSourceMap = `version: 1
+capabilities:
+  api.order.create:
+    current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+    timeline:
+      - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
+      - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+    rules:
+      优惠计算失败时不创建订单:
+        current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+        timeline:
+          - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
+          - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+`;
+
+const feature = `# language: zh-CN
 # capability: api.order.create
 # entrypoint: OrderController#create
-# sources:
-#   current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-#   timeline:
-#     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
-#     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
 @order @create
 
 功能: 创建订单
@@ -100,108 +110,78 @@ const createdRaw = await executeContract({
   kind: "capability",
   id: "api.order.create",
   file: "features/api/order/create.feature",
-  content: featureWithSources,
+  content: feature,
   map_content: mapContent,
   raw: true,
 });
 const created = JSON.parse(createdRaw);
-console.log("=== valid sources contract ===\n" + createdRaw + "\n");
-assert(created.ok === true, "contract should accept valid sources block");
+console.log("=== contract without inline sources ===\n" + createdRaw + "\n");
+assert(created.ok === true, "contract should accept features without inline sources comments");
 
-const featureOnDisk = await readFile(resolve(tmpRoot, "harness/features/api/order/create.feature"), "utf-8");
-assert(featureOnDisk.includes("# sources:"), "feature should be written with sources block");
+const featureOnDisk = await readFile(resolve(tmpRoot, ".harness/features/api/order/create.feature"), "utf-8");
+assert(!featureOnDisk.includes("# sources:"), "feature should not need inline sources comments");
 
-const ruleSourceOverride = featureWithSources.replace(
-  "  规则: 优惠计算失败时不创建订单\n    场景:",
-  `  规则: 优惠计算失败时不创建订单
-    优惠服务失败时,订单创建必须整体回滚。
+await writeFile(resolve(tmpRoot, ".harness/source-map.yaml"), validSourceMap);
 
-    # sources:
-    #   current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-    #   timeline:
-    #     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
-    #     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-
-    场景:`,
-);
-const ruleSourceOverrideRaw = await executeContract({
-  path: tmpRoot,
-  kind: "capability",
-  id: "api.order.create",
-  file: "features/api/order/create.feature",
-  content: ruleSourceOverride,
-  map_content: mapContent,
-  raw: true,
-});
-const ruleSourceOverrideResult = JSON.parse(ruleSourceOverrideRaw);
-console.log("=== rule source override ===\n" + ruleSourceOverrideRaw + "\n");
+const checkRaw = await executeCheck({ path: tmpRoot, dryRun: true, raw: true });
+const check = JSON.parse(checkRaw);
+console.log("=== check source map ===\n" + checkRaw + "\n");
 assert(
-  ruleSourceOverrideResult.ok === true,
-  "contract should accept optional Rule-level source overrides",
+  check.static_checks.some((item: any) =>
+    item.id === "sources.files.date_name" &&
+    item.level === "fail" &&
+    String(item.detail).includes("invalid-name.md")
+  ),
+  "check should fail source files without date prefix",
+);
+assert(
+  check.static_checks.some((item: any) => item.id === "source_map.format" && item.level === "pass"),
+  "check should validate source-map.yaml when it exists",
+);
+assert(
+  !check.static_checks.some((item: any) => String(item.id).startsWith("feature_sources.")),
+  "check should not use feature inline source checks anymore",
 );
 
-const withoutSources = featureWithSources.replace(/# sources:[\s\S]+?@order/, "@order");
-const withoutSourcesRaw = await executeContract({
-  path: tmpRoot,
-  kind: "capability",
-  id: "api.order.create",
-  file: "features/api/order/create.feature",
-  content: withoutSources,
-  map_content: mapContent,
-  raw: true,
-});
-const withoutSourcesResult = JSON.parse(withoutSourcesRaw);
-console.log("=== no explicit sources ===\n" + withoutSourcesRaw + "\n");
-assert(withoutSourcesResult.ok === true, "contract should accept features without explicit sources");
-
-const missingFile = featureWithSources.replace(
+const missingSourceMap = validSourceMap.replace(
   "sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理",
   "sources/2026-05-11-missing-confirmation.md#优惠失败处理",
 );
-const missingFileResult = await executeContract({
-  path: tmpRoot,
-  kind: "capability",
-  id: "api.order.create",
-  file: "features/api/order/create.feature",
-  content: missingFile,
-  map_content: mapContent,
-});
-console.log("=== missing source file ===\n" + missingFileResult + "\n");
-assert(missingFileResult.includes("feature_sources.exists"), "contract should reject missing source files");
+await writeFile(resolve(tmpRoot, ".harness/source-map.yaml"), missingSourceMap);
+const missingCheck = JSON.parse(await executeCheck({ path: tmpRoot, dryRun: true, raw: true }));
+console.log("=== missing source map file ===\n" + JSON.stringify(missingCheck, null, 2) + "\n");
+assert(
+  missingCheck.static_checks.some((item: any) => item.id === "source_map.exists" && item.level === "fail"),
+  "check should reject source-map references to missing source files",
+);
 
-const currentOutsideTimeline = featureWithSources.replace(
+const outsideTimelineSourceMap = validSourceMap.replace(
   "current: sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理",
   "current: sources/2026-05-08-code-inference-order-create.md#其他章节",
 );
-const currentOutsideTimelineResult = await executeContract({
-  path: tmpRoot,
-  kind: "capability",
-  id: "api.order.create",
-  file: "features/api/order/create.feature",
-  content: currentOutsideTimeline,
-  map_content: mapContent,
-});
-console.log("=== current outside timeline ===\n" + currentOutsideTimelineResult + "\n");
-assert(currentOutsideTimelineResult.includes("feature_sources.current_in_timeline"), "contract should require current to be in timeline");
-
-const reversedTimeline = featureWithSources.replace(
-  `#     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
-#     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理`,
-  `#     - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
-#     - sources/2026-05-08-code-inference-order-create.md#优惠计算失败`,
+await writeFile(resolve(tmpRoot, ".harness/source-map.yaml"), outsideTimelineSourceMap);
+const outsideTimelineCheck = JSON.parse(await executeCheck({ path: tmpRoot, dryRun: true, raw: true }));
+console.log("=== source map current outside timeline ===\n" + JSON.stringify(outsideTimelineCheck, null, 2) + "\n");
+assert(
+  outsideTimelineCheck.static_checks.some((item: any) => item.id === "source_map.current_in_timeline" && item.level === "fail"),
+  "check should require source-map current to be in timeline",
 );
-const reversedTimelineResult = await executeContract({
-  path: tmpRoot,
-  kind: "capability",
-  id: "api.order.create",
-  file: "features/api/order/create.feature",
-  content: reversedTimeline,
-  map_content: mapContent,
-});
-console.log("=== reversed timeline ===\n" + reversedTimelineResult + "\n");
-assert(reversedTimelineResult.includes("feature_sources.timeline_order"), "contract should reject reversed timeline dates");
 
-const topLevelScenario = featureWithSources.replace(
+const reversedTimelineSourceMap = validSourceMap.replace(
+  `      - sources/2026-05-08-code-inference-order-create.md#优惠计算失败
+      - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理`,
+  `      - sources/2026-05-10-manual-confirmation-order-create.md#优惠失败处理
+      - sources/2026-05-08-code-inference-order-create.md#优惠计算失败`,
+);
+await writeFile(resolve(tmpRoot, ".harness/source-map.yaml"), reversedTimelineSourceMap);
+const reversedTimelineCheck = JSON.parse(await executeCheck({ path: tmpRoot, dryRun: true, raw: true }));
+console.log("=== source map reversed timeline ===\n" + JSON.stringify(reversedTimelineCheck, null, 2) + "\n");
+assert(
+  reversedTimelineCheck.static_checks.some((item: any) => item.id === "source_map.timeline_order" && item.level === "fail"),
+  "check should reject reversed source-map timeline dates",
+);
+
+const topLevelScenario = feature.replace(
   "  规则: 优惠计算失败时不创建订单",
   `  场景: 顶层场景不允许绕过规则
     假设 客户已登录
@@ -224,12 +204,14 @@ assert(
   "contract should reject scenarios before the first Rule",
 );
 
+await writeFile(resolve(tmpRoot, ".harness/source-map.yaml"), validSourceMap);
+
 const contextRaw = await executeContext({ path: tmpRoot, raw: true });
 const context = JSON.parse(contextRaw);
 console.log("=== context sources ===\n" + contextRaw + "\n");
 assert(
   context.sources.some((source: any) =>
-    source.file.endsWith("harness/sources/2026-05-08-code-inference-order-create.md") &&
+    source.file.endsWith(".harness/sources/2026-05-08-code-inference-order-create.md") &&
     source.title === "创建订单规则代码推断"
   ),
   "project_context should index sources with titles",
@@ -249,27 +231,12 @@ const search = JSON.parse(searchRaw);
 console.log("=== search source ===\n" + searchRaw + "\n");
 assert(search.matches.length >= 1, "read_source query should search source content");
 
-const checkRaw = await executeCheck({ path: tmpRoot, dryRun: true, raw: true });
-const check = JSON.parse(checkRaw);
-console.log("=== check sources ===\n" + checkRaw + "\n");
-assert(
-  check.static_checks.some((item: any) =>
-    item.id === "sources.files.date_name" &&
-    item.level === "fail" &&
-    String(item.detail).includes("invalid-name.md")
-  ),
-  "check should fail source files without date prefix",
-);
-assert(
-  !check.static_checks.some((item: any) => item.id === "feature_sources.required"),
-  "check should not include a required sources gate",
-);
-
 const sourcesGuide = await executeHelp({ topic: "sources" });
 console.log("=== guide sources ===\n" + sourcesGuide + "\n");
-assert(sourcesGuide.includes("# sources:"), "guide should document fixed sources block");
+assert(sourcesGuide.includes("source-map.yaml"), "guide should document source-map.yaml");
 assert(sourcesGuide.includes("current:"), "guide should document current");
 assert(sourcesGuide.includes("timeline:"), "guide should document timeline");
+assert(!sourcesGuide.includes("# sources:"), "guide should not ask AI to write inline sources comments");
 
 await rm(tmpRoot, { recursive: true, force: true });
 

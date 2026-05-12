@@ -19,7 +19,7 @@ import { runShell } from "../runner.ts";
 import { parseReport, type ParsedReport } from "../parsers/report.ts";
 import { checkFeatureQuality } from "../feature_quality.ts";
 import {
-  checkFeatureSources,
+  checkSourceMap,
   checkSourceFiles,
   type SourceIssue,
 } from "../sources.ts";
@@ -223,7 +223,7 @@ async function collectStaticChecks(
   }
 
   checks.push(...await collectFeatureLayoutChecks(projectRoot, specDirAbs, targets));
-  checks.push(...await collectSourceTraceChecks(projectRoot, specDirAbs, features));
+  checks.push(...await collectSourceTraceChecks(projectRoot, specDirAbs));
   checks.push(...await collectCharterFormatChecks(projectRoot, charterDirAbs));
   checks.push(...await collectMapAlignmentChecks(projectRoot, specDirAbs, features, targets));
   checks.push(...await collectHarnessBddImplementationChecks(projectRoot, specDirAbs));
@@ -233,21 +233,18 @@ async function collectStaticChecks(
 async function collectSourceTraceChecks(
   projectRoot: string,
   specDirAbs: string,
-  features: { fileRel: string; content: string }[],
 ): Promise<StaticCheck[]> {
   const sourceIssues = [
     ...await checkSourceFiles(projectRoot, specDirAbs),
-    ...(await Promise.all(
-      features.map(async (feature) => (await checkFeatureSources(feature.content, feature.fileRel, specDirAbs)).issues),
-    )).flat(),
+    ...await checkSourceMap(projectRoot, specDirAbs),
   ];
 
   const ids = [
     "sources.files.date_name",
-    "feature_sources.format",
-    "feature_sources.exists",
-    "feature_sources.timeline_order",
-    "feature_sources.current_in_timeline",
+    "source_map.format",
+    "source_map.exists",
+    "source_map.timeline_order",
+    "source_map.current_in_timeline",
   ];
 
   return ids.map((id) => {
@@ -436,7 +433,7 @@ async function collectHarnessBddImplementationChecks(
   return [{
     id: "harness_contract.no_bdd_implementation",
     level: issues.length === 0 ? "pass" : "fail",
-    message: issues.length === 0 ? "harness contains contract files only" : `${issues.length} BDD implementation artifact(s) found under harness`,
+    message: issues.length === 0 ? "spec_dir contains contract files only" : `${issues.length} BDD implementation artifact(s) found under spec_dir`,
     detail: issues.join("; ") || undefined,
   }];
 }
@@ -479,19 +476,19 @@ export function getConstraintDiscoveryWarnings(
 ): string[] {
   const warnings: string[] = [];
   const expectedDir = resolve(specDirAbs, "constraints");
-  const conventionalDir = resolve(projectRoot, "harness/constraints");
+  const conventionalDir = resolve(projectRoot, ".harness/constraints");
   const expectedRel = relative(projectRoot, expectedDir) || "constraints";
-  const conventionalRel = relative(projectRoot, conventionalDir) || "harness/constraints";
+  const conventionalRel = relative(projectRoot, conventionalDir) || ".harness/constraints";
 
-  if (configuredSpecDir !== "harness") {
+  if (configuredSpecDir !== ".harness") {
     warnings.push(
-      `推荐 harness.yaml 使用 spec_dir: harness。当前 spec_dir: ${configuredSpecDir}; check 只扫描 ${expectedRel},不要让 AI 自己发明 harness/specs 这类目录。`,
+      `推荐 harness.yaml 使用 spec_dir: .harness。当前 spec_dir: ${configuredSpecDir}; check 只扫描 ${expectedRel},不要让 AI 自己发明 specs 目录。`,
     );
   }
 
-  if (configuredSpecDir !== "harness" && existsSync(conventionalDir)) {
+  if (configuredSpecDir !== ".harness" && existsSync(conventionalDir)) {
     warnings.push(
-      `发现 ${conventionalRel},但当前配置下 check 不会扫描它;请改为 spec_dir: harness,或把约束移动到 ${expectedRel}。`,
+      `发现 ${conventionalRel},但当前配置下 check 不会扫描它;请改为 spec_dir: .harness,或把约束移动到 ${expectedRel}。`,
     );
   }
 
